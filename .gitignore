@@ -1,0 +1,19 @@
+# Build outputs
+bin/
+obj/
+*.user
+
+# Application data folder (portable mode)
+# All runtime configuration, logs, and database files
+Data/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Windows
+Thumbs.db
+Desktop.ini

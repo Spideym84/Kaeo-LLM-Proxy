@@ -1,0 +1,909 @@
+namespace Kaeo.LlmProxy;
+
+partial class MainForm
+{
+    private System.ComponentModel.IContainer components = null;
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && (components != null))
+        {
+            components.Dispose();
+        }
+        base.Dispose(disposing);
+    }
+
+    private void InitializeComponent()
+    {
+        components = new System.ComponentModel.Container();
+        _tabControl = new TabControl();
+        _tabDashboard = new TabPage();
+        _tabLogs = new TabPage();
+        _tabSettings = new TabPage();
+        _tabTest = new TabPage();
+
+        // Dashboard controls
+        _grpStatus = new GroupBox();
+        _pnlStatus = new Panel();
+        _flpStatusButtons = new FlowLayoutPanel();
+        _lblStatusValue = new Label();
+        _lblStatus = new Label();
+        _btnStart = new Button();
+        _btnStop = new Button();
+        _btnRestart = new Button();
+
+        // Stats panel
+        _tlpStats = new TableLayoutPanel();
+        _lblTotalRequestsCaption = new Label();
+        _lblTotalRequestsValue = new Label();
+        _lblTotalErrorsCaption = new Label();
+        _lblTotalErrorsValue = new Label();
+        _lblPromptTokensCaption = new Label();
+        _lblPromptTokensValue = new Label();
+        _lblCompletionTokensCaption = new Label();
+        _lblCompletionTokensValue = new Label();
+        _lblRpsCaption = new Label();
+        _lblRpsValue = new Label();
+        _btnResetStats = new Button();
+
+        // Performance panel
+        _grpPerf = new GroupBox();
+        _tlpPerf = new TableLayoutPanel();
+        _lblCpuCaption = new Label();
+        _lblCpuValue = new Label();
+        _lblRamCaption = new Label();
+        _lblRamValue = new Label();
+
+        // Logs controls
+        _lstLogs = new ListView();
+        _colTime = new ColumnHeader();
+        _colMethod = new ColumnHeader();
+        _colPath = new ColumnHeader();
+        _colModel = new ColumnHeader();
+        _colStatus = new ColumnHeader();
+        _colDuration = new ColumnHeader();
+        _colTokens = new ColumnHeader();
+        _chkAutoRefresh = new CheckBox();
+        _btnRefreshLogs = new Button();
+        _btnClearLogs = new Button();
+        _btnLogDetails = new Button();
+
+        // Settings controls
+        _tlpSettings = new TableLayoutPanel();
+        _lblListenPort = new Label();
+        _txtListenPort = new TextBox();
+        _lblMaxLogs = new Label();
+        _txtMaxLogs = new TextBox();
+        _lblMappings = new Label();
+        _dgvMappings = new DataGridView();
+        _colOllamaName = new DataGridViewTextBoxColumn();
+        _colLlamaCppName = new DataGridViewComboBoxColumn();
+        _colUpstreamUrl = new DataGridViewTextBoxColumn();
+        _colUpstreamTimeout = new DataGridViewTextBoxColumn();
+        _colUpstreamType = new DataGridViewComboBoxColumn();
+        _btnSaveSettings = new Button();
+        _btnAddMapping = new Button();
+        _btnRemoveMapping = new Button();
+        _btnFetchModels = new Button();
+        _chkAutoStart = new CheckBox();
+        _chkStartWithDashboard = new CheckBox();
+        _chkCollectDetails = new CheckBox();
+
+        _grpLogging = new GroupBox();
+        _tlpLogging = new TableLayoutPanel();
+        _lblLogDir = new Label();
+        _txtLogDir = new TextBox();
+        _lblMinLevel = new Label();
+        _cmbMinLevel = new ComboBox();
+        _lblAppLogSize = new Label();
+        _txtAppLogSize = new TextBox();
+        _lblAppLogRetain = new Label();
+        _txtAppLogRetain = new TextBox();
+        _lblReqLogSize = new Label();
+        _txtReqLogSize = new TextBox();
+        _lblLogRetention = new Label();
+        _txtLogRetention = new TextBox();
+
+        _refreshTimer = new System.Windows.Forms.Timer(components);
+
+        // Test Console controls
+        _tlpTestOuter = new TableLayoutPanel();
+        _tlpTestTop = new TableLayoutPanel();
+        _lblTestModel = new Label();
+        _cmbTestModel = new ComboBox();
+        _lblTestTemp = new Label();
+        _nudTestTemp = new NumericUpDown();
+        _btnTestSend = new Button();
+        _btnTestClear = new Button();
+        _txtTestPrompt = new TextBox();
+        _txtTestResponse = new TextBox();
+        _lblTestStatus = new Label();
+
+        _grpLogging.SuspendLayout();
+        _tlpLogging.SuspendLayout();
+        _grpPerf.SuspendLayout();
+        _tlpPerf.SuspendLayout();
+        _tabControl.SuspendLayout();
+        _tabDashboard.SuspendLayout();
+        _tabLogs.SuspendLayout();
+        _tabSettings.SuspendLayout();
+        _tabTest.SuspendLayout();
+        _tlpTestOuter.SuspendLayout();
+        _tlpTestTop.SuspendLayout();
+        ((System.ComponentModel.ISupportInitialize)_nudTestTemp).BeginInit();
+        _grpStatus.SuspendLayout();
+        _pnlStatus.SuspendLayout();
+        _flpStatusButtons.SuspendLayout();
+        ((System.ComponentModel.ISupportInitialize)_dgvMappings).BeginInit();
+        SuspendLayout();
+
+        // _tabControl
+        _tabControl.Controls.Add(_tabDashboard);
+        _tabControl.Controls.Add(_tabLogs);
+        _tabControl.Controls.Add(_tabSettings);
+        _tabControl.Controls.Add(_tabTest);
+        _tabControl.Dock = DockStyle.Fill;
+        _tabControl.Name = "_tabControl";
+        _tabControl.SelectedIndex = 0;
+
+        // _tabDashboard
+        _tabDashboard.Controls.Add(_grpStatus);
+        _tabDashboard.Controls.Add(_tlpStats);
+        _tabDashboard.Controls.Add(_grpPerf);
+        _tabDashboard.Dock = DockStyle.Fill;
+        _tabDashboard.Name = "_tabDashboard";
+        _tabDashboard.Padding = new Padding(8);
+        _tabDashboard.Text = "Dashboard";
+
+        // _grpStatus
+        _grpStatus.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        _grpStatus.Controls.Add(_pnlStatus);
+        _grpStatus.Location = new Point(8, 8);
+        _grpStatus.Name = "_grpStatus";
+        _grpStatus.Padding = new Padding(6, 2, 6, 4);
+        _grpStatus.Size = new Size(660, 52);
+        _grpStatus.Text = "Proxy Status";
+
+        // _pnlStatus — dock Fill; contains buttons (Dock=Right), then labels (Left/Fill)
+        _pnlStatus.Dock = DockStyle.Fill;
+        _pnlStatus.Name = "_pnlStatus";
+        // Add in dock-priority order: Fill first (lowest priority), Left second, Right last (highest priority)
+        _pnlStatus.Controls.Add(_lblStatusValue);
+        _pnlStatus.Controls.Add(_lblStatus);
+        _pnlStatus.Controls.Add(_flpStatusButtons);
+
+        // _flpStatusButtons — docked Right, auto-sized to button content
+        _flpStatusButtons.AutoSize = true;
+        _flpStatusButtons.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        _flpStatusButtons.Dock = DockStyle.Right;
+        _flpStatusButtons.FlowDirection = FlowDirection.LeftToRight;
+        _flpStatusButtons.Name = "_flpStatusButtons";
+        _flpStatusButtons.Padding = new Padding(0, 3, 0, 3);
+        _flpStatusButtons.WrapContents = false;
+        _flpStatusButtons.Controls.Add(_btnStart);
+        _flpStatusButtons.Controls.Add(_btnStop);
+        _flpStatusButtons.Controls.Add(_btnRestart);
+
+        _lblStatus.Dock = DockStyle.Left;
+        _lblStatus.Name = "_lblStatus";
+        _lblStatus.Padding = new Padding(4, 0, 6, 0);
+        _lblStatus.Text = "Status:";
+        _lblStatus.TextAlign = ContentAlignment.MiddleLeft;
+        _lblStatus.Width = 52;
+
+        _lblStatusValue.Dock = DockStyle.Fill;
+        _lblStatusValue.Font = new Font(SystemFonts.DefaultFont, FontStyle.Bold);
+        _lblStatusValue.Name = "_lblStatusValue";
+        _lblStatusValue.Text = "Stopped";
+        _lblStatusValue.TextAlign = ContentAlignment.MiddleLeft;
+
+        _btnStart.Margin = new Padding(2, 0, 2, 0);
+        _btnStart.Name = "_btnStart";
+        _btnStart.Size = new Size(80, 28);
+        _btnStart.Text = "Start";
+        _btnStart.Click += BtnStart_Click;
+
+        _btnStop.Margin = new Padding(2, 0, 2, 0);
+        _btnStop.Name = "_btnStop";
+        _btnStop.Size = new Size(80, 28);
+        _btnStop.Text = "Stop";
+        _btnStop.Click += BtnStop_Click;
+
+        _btnRestart.Margin = new Padding(2, 0, 2, 0);
+        _btnRestart.Name = "_btnRestart";
+        _btnRestart.Size = new Size(88, 28);
+        _btnRestart.Text = "Restart";
+        _btnRestart.Click += BtnRestart_Click;
+
+        // _tlpStats
+        _tlpStats.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        _tlpStats.AutoSize = true;
+        _tlpStats.AutoSizeMode = AutoSizeMode.GrowOnly;
+        _tlpStats.ColumnCount = 4;
+        _tlpStats.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _tlpStats.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+        _tlpStats.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _tlpStats.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+        _tlpStats.Controls.Add(_lblTotalRequestsCaption, 0, 0);
+        _tlpStats.Controls.Add(_lblTotalRequestsValue, 1, 0);
+        _tlpStats.Controls.Add(_lblTotalErrorsCaption, 2, 0);
+        _tlpStats.Controls.Add(_lblTotalErrorsValue, 3, 0);
+        _tlpStats.Controls.Add(_lblPromptTokensCaption, 0, 1);
+        _tlpStats.Controls.Add(_lblPromptTokensValue, 1, 1);
+        _tlpStats.Controls.Add(_lblCompletionTokensCaption, 2, 1);
+        _tlpStats.Controls.Add(_lblCompletionTokensValue, 3, 1);
+        _tlpStats.Controls.Add(_lblRpsCaption, 0, 2);
+        _tlpStats.Controls.Add(_lblRpsValue, 1, 2);
+        _tlpStats.Controls.Add(_btnResetStats, 3, 2);
+        _tlpStats.Location = new Point(8, 90);
+        _tlpStats.Name = "_tlpStats";
+        _tlpStats.Padding = new Padding(4);
+        _tlpStats.Size = new Size(660, 120);
+
+        _lblTotalRequestsCaption.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblTotalRequestsCaption.AutoSize = true;
+        _lblTotalRequestsCaption.Margin = new Padding(4, 6, 4, 4);
+        _lblTotalRequestsCaption.Name = "_lblTotalRequestsCaption";
+        _lblTotalRequestsCaption.Text = "Total Requests:";
+
+        _lblTotalRequestsValue.AutoSize = true;
+        _lblTotalRequestsValue.Font = new Font(SystemFonts.DefaultFont, FontStyle.Bold);
+        _lblTotalRequestsValue.Margin = new Padding(4, 6, 4, 4);
+        _lblTotalRequestsValue.Name = "_lblTotalRequestsValue";
+        _lblTotalRequestsValue.Text = "0";
+
+        _lblTotalErrorsCaption.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblTotalErrorsCaption.AutoSize = true;
+        _lblTotalErrorsCaption.Margin = new Padding(12, 6, 4, 4);
+        _lblTotalErrorsCaption.Name = "_lblTotalErrorsCaption";
+        _lblTotalErrorsCaption.Text = "Errors:";
+
+        _lblTotalErrorsValue.AutoSize = true;
+        _lblTotalErrorsValue.Font = new Font(SystemFonts.DefaultFont, FontStyle.Bold);
+        _lblTotalErrorsValue.Margin = new Padding(4, 6, 4, 4);
+        _lblTotalErrorsValue.Name = "_lblTotalErrorsValue";
+        _lblTotalErrorsValue.Text = "0";
+
+        _lblPromptTokensCaption.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblPromptTokensCaption.AutoSize = true;
+        _lblPromptTokensCaption.Margin = new Padding(4, 6, 4, 4);
+        _lblPromptTokensCaption.Name = "_lblPromptTokensCaption";
+        _lblPromptTokensCaption.Text = "Prompt Tokens:";
+
+        _lblPromptTokensValue.AutoSize = true;
+        _lblPromptTokensValue.Font = new Font(SystemFonts.DefaultFont, FontStyle.Bold);
+        _lblPromptTokensValue.Margin = new Padding(4, 6, 4, 4);
+        _lblPromptTokensValue.Name = "_lblPromptTokensValue";
+        _lblPromptTokensValue.Text = "0";
+
+        _lblCompletionTokensCaption.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblCompletionTokensCaption.AutoSize = true;
+        _lblCompletionTokensCaption.Margin = new Padding(12, 6, 4, 4);
+        _lblCompletionTokensCaption.Name = "_lblCompletionTokensCaption";
+        _lblCompletionTokensCaption.Text = "Completion Tokens:";
+
+        _lblCompletionTokensValue.AutoSize = true;
+        _lblCompletionTokensValue.Font = new Font(SystemFonts.DefaultFont, FontStyle.Bold);
+        _lblCompletionTokensValue.Margin = new Padding(4, 6, 4, 4);
+        _lblCompletionTokensValue.Name = "_lblCompletionTokensValue";
+        _lblCompletionTokensValue.Text = "0";
+
+        _btnResetStats.Anchor = AnchorStyles.Right;
+        _btnResetStats.AutoSize = true;
+        _btnResetStats.Margin = new Padding(4, 8, 4, 4);
+        _btnResetStats.Name = "_btnResetStats";
+        _btnResetStats.Text = "Reset Stats";
+        _btnResetStats.Click += BtnResetStats_Click;
+
+        _lblRpsCaption.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblRpsCaption.AutoSize = true;
+        _lblRpsCaption.Margin = new Padding(4, 6, 4, 4);
+        _lblRpsCaption.Name = "_lblRpsCaption";
+        _lblRpsCaption.Text = "Req/s (60s avg):";
+
+        _lblRpsValue.AutoSize = true;
+        _lblRpsValue.Font = new Font(SystemFonts.DefaultFont, FontStyle.Bold);
+        _lblRpsValue.Margin = new Padding(4, 6, 4, 4);
+        _lblRpsValue.Name = "_lblRpsValue";
+        _lblRpsValue.Text = "0.00";
+
+        // _grpPerf
+        _grpPerf.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        _grpPerf.AutoSize = true;
+        _grpPerf.AutoSizeMode = AutoSizeMode.GrowOnly;
+        _grpPerf.Controls.Add(_tlpPerf);
+        _grpPerf.Location = new Point(8, 230);
+        _grpPerf.Name = "_grpPerf";
+        _grpPerf.Text = "Process Performance";
+
+        // _tlpPerf
+        _tlpPerf.AutoSize = true;
+        _tlpPerf.AutoSizeMode = AutoSizeMode.GrowOnly;
+        _tlpPerf.ColumnCount = 4;
+        _tlpPerf.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _tlpPerf.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+        _tlpPerf.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _tlpPerf.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+        _tlpPerf.Controls.Add(_lblCpuCaption, 0, 0);
+        _tlpPerf.Controls.Add(_lblCpuValue, 1, 0);
+        _tlpPerf.Controls.Add(_lblRamCaption, 2, 0);
+        _tlpPerf.Controls.Add(_lblRamValue, 3, 0);
+        _tlpPerf.Dock = DockStyle.Fill;
+        _tlpPerf.Margin = new Padding(4);
+        _tlpPerf.Name = "_tlpPerf";
+
+        _lblCpuCaption.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblCpuCaption.AutoSize = true;
+        _lblCpuCaption.Margin = new Padding(4, 8, 8, 8);
+        _lblCpuCaption.Name = "_lblCpuCaption";
+        _lblCpuCaption.Text = "CPU:";
+
+        _lblCpuValue.AutoSize = true;
+        _lblCpuValue.Font = new Font(SystemFonts.DefaultFont, FontStyle.Bold);
+        _lblCpuValue.Margin = new Padding(4, 8, 4, 8);
+        _lblCpuValue.Name = "_lblCpuValue";
+        _lblCpuValue.Text = "0.0%";
+
+        _lblRamCaption.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblRamCaption.AutoSize = true;
+        _lblRamCaption.Margin = new Padding(12, 8, 8, 8);
+        _lblRamCaption.Name = "_lblRamCaption";
+        _lblRamCaption.Text = "RAM:";
+
+        _lblRamValue.AutoSize = true;
+        _lblRamValue.Font = new Font(SystemFonts.DefaultFont, FontStyle.Bold);
+        _lblRamValue.Margin = new Padding(4, 8, 4, 8);
+        _lblRamValue.Name = "_lblRamValue";
+        _lblRamValue.Text = "0 MB";
+
+        // _tabLogs
+        _tabLogs.Controls.Add(_lstLogs);
+        _tabLogs.Controls.Add(_chkAutoRefresh);
+        _tabLogs.Controls.Add(_btnRefreshLogs);
+        _tabLogs.Controls.Add(_btnClearLogs);
+        _tabLogs.Controls.Add(_btnLogDetails);
+        _tabLogs.Dock = DockStyle.Fill;
+        _tabLogs.Name = "_tabLogs";
+        _tabLogs.Padding = new Padding(8);
+        _tabLogs.Text = "Logs";
+
+        _chkAutoRefresh.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+        _chkAutoRefresh.AutoSize = true;
+        _chkAutoRefresh.Checked = true;
+        _chkAutoRefresh.CheckState = CheckState.Checked;
+        _chkAutoRefresh.Location = new Point(8, 488);
+        _chkAutoRefresh.Name = "_chkAutoRefresh";
+        _chkAutoRefresh.Text = "Auto-refresh";
+
+        _btnRefreshLogs.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+        _btnRefreshLogs.Location = new Point(414, 484);
+        _btnRefreshLogs.Name = "_btnRefreshLogs";
+        _btnRefreshLogs.Size = new Size(88, 28);
+        _btnRefreshLogs.Text = "Refresh";
+        _btnRefreshLogs.Click += BtnRefreshLogs_Click;
+
+        _btnLogDetails.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+        _btnLogDetails.Location = new Point(508, 484);
+        _btnLogDetails.Name = "_btnLogDetails";
+        _btnLogDetails.Size = new Size(88, 28);
+        _btnLogDetails.Text = "Details\u2026";
+        _btnLogDetails.Click += BtnLogDetails_Click;
+
+        _btnClearLogs.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+        _btnClearLogs.Location = new Point(600, 484);
+        _btnClearLogs.Name = "_btnClearLogs";
+        _btnClearLogs.Size = new Size(88, 28);
+        _btnClearLogs.Text = "Clear";
+        _btnClearLogs.Click += BtnClearLogs_Click;
+
+        _lstLogs.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+        _lstLogs.Columns.Add(_colTime);
+        _lstLogs.Columns.Add(_colMethod);
+        _lstLogs.Columns.Add(_colPath);
+        _lstLogs.Columns.Add(_colModel);
+        _lstLogs.Columns.Add(_colStatus);
+        _lstLogs.Columns.Add(_colDuration);
+        _lstLogs.Columns.Add(_colTokens);
+        _lstLogs.FullRowSelect = true;
+        _lstLogs.GridLines = true;
+        _lstLogs.Location = new Point(8, 8);
+        _lstLogs.Name = "_lstLogs";
+        _lstLogs.Size = new Size(680, 472);
+        _lstLogs.View = View.Details;
+        _lstLogs.DoubleClick += LstLogs_DoubleClick;
+
+        _colTime.Text = "Time";
+        _colTime.Width = 80;
+        _colMethod.Text = "Method";
+        _colMethod.Width = 55;
+        _colPath.Text = "Path";
+        _colPath.Width = 160;
+        _colModel.Text = "Model";
+        _colModel.Width = 160;
+        _colStatus.Text = "Status";
+        _colStatus.Width = 60;
+        _colDuration.Text = "ms";
+        _colDuration.Width = 60;
+        _colTokens.Text = "Tokens";
+        _colTokens.Width = 80;
+
+        // _tabSettings
+        _tabSettings.AutoScroll = true;
+        _tabSettings.Controls.Add(_tlpSettings);
+        _tabSettings.Dock = DockStyle.Fill;
+        _tabSettings.Name = "_tabSettings";
+        _tabSettings.Padding = new Padding(8);
+        _tabSettings.Text = "Settings";
+
+        _tlpSettings.AutoSize = true;
+        _tlpSettings.AutoSizeMode = AutoSizeMode.GrowOnly;
+        _tlpSettings.ColumnCount = 2;
+        _tlpSettings.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _tlpSettings.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        _tlpSettings.Location = new Point(8, 8);
+        _tlpSettings.Name = "_tlpSettings";
+        _tlpSettings.RowCount = 8;
+        _tlpSettings.Size = new Size(660, 420);
+
+        _tlpSettings.Controls.Add(_lblListenPort, 0, 0);
+        _tlpSettings.Controls.Add(_txtListenPort, 1, 0);
+        _tlpSettings.Controls.Add(_lblMaxLogs, 0, 1);
+        _tlpSettings.Controls.Add(_txtMaxLogs, 1, 1);
+        _tlpSettings.SetColumnSpan(_chkAutoStart, 2);
+        _tlpSettings.Controls.Add(_chkAutoStart, 0, 2);
+        _tlpSettings.SetColumnSpan(_chkStartWithDashboard, 2);
+        _tlpSettings.Controls.Add(_chkStartWithDashboard, 0, 3);
+        _tlpSettings.SetColumnSpan(_chkCollectDetails, 2);
+        _tlpSettings.Controls.Add(_chkCollectDetails, 0, 4);
+        _tlpSettings.Controls.Add(_lblMappings, 0, 5);
+        _tlpSettings.Controls.Add(_btnFetchModels, 1, 5);
+        _tlpSettings.SetColumnSpan(_dgvMappings, 2);
+        _tlpSettings.Controls.Add(_dgvMappings, 0, 6);
+        _tlpSettings.SetColumnSpan(_btnAddMapping, 1);
+        _tlpSettings.Controls.Add(_btnAddMapping, 0, 7);
+        _tlpSettings.Controls.Add(_btnRemoveMapping, 1, 7);
+        _tlpSettings.SetColumnSpan(_btnSaveSettings, 2);
+        _tlpSettings.Controls.Add(_btnSaveSettings, 0, 8);
+
+        _lblListenPort.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblListenPort.AutoSize = true;
+        _lblListenPort.Margin = new Padding(4, 8, 8, 4);
+        _lblListenPort.Name = "_lblListenPort";
+        _lblListenPort.Text = "Listen Port:";
+
+        _txtListenPort.Dock = DockStyle.Fill;
+        _txtListenPort.Margin = new Padding(4, 6, 4, 4);
+        _txtListenPort.Name = "_txtListenPort";
+
+        _lblMaxLogs.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblMaxLogs.AutoSize = true;
+        _lblMaxLogs.Margin = new Padding(4, 8, 8, 4);
+        _lblMaxLogs.Name = "_lblMaxLogs";
+        _lblMaxLogs.Text = "Max Log Entries:";
+
+        _txtMaxLogs.Dock = DockStyle.Fill;
+        _txtMaxLogs.Margin = new Padding(4, 6, 4, 4);
+        _txtMaxLogs.Name = "_txtMaxLogs";
+
+        _chkAutoStart.AutoSize = true;
+        _chkAutoStart.Margin = new Padding(4, 8, 4, 4);
+        _chkAutoStart.Name = "_chkAutoStart";
+        _chkAutoStart.Text = "Automatically start proxy on launch";
+
+        _chkStartWithDashboard.AutoSize = true;
+        _chkStartWithDashboard.Margin = new Padding(4, 4, 4, 8);
+        _chkStartWithDashboard.Name = "_chkStartWithDashboard";
+        _chkStartWithDashboard.Text = "Open dashboard window on startup";
+
+        _chkCollectDetails.AutoSize = true;
+        _chkCollectDetails.Margin = new Padding(4, 4, 4, 8);
+        _chkCollectDetails.Name = "_chkCollectDetails";
+        _chkCollectDetails.Text = "Collect request details (captures raw request body into each log entry)";
+
+        _lblMappings.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblMappings.AutoSize = true;
+        _lblMappings.Margin = new Padding(4, 8, 4, 4);
+        _lblMappings.Name = "_lblMappings";
+        _lblMappings.Text = "Model Name Mappings (Ollama → llama.cpp):";
+
+        _dgvMappings.AllowUserToAddRows = false;
+        _dgvMappings.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+        _dgvMappings.Columns.Add(_colOllamaName);
+        _dgvMappings.Columns.Add(_colLlamaCppName);
+        _dgvMappings.Columns.Add(_colUpstreamUrl);
+        _dgvMappings.Columns.Add(_colUpstreamTimeout);
+        _dgvMappings.Columns.Add(_colUpstreamType);
+        _dgvMappings.Dock = DockStyle.Fill;
+        _dgvMappings.Margin = new Padding(4, 4, 4, 4);
+        _dgvMappings.MinimumSize = new Size(0, 120);
+        _dgvMappings.Name = "_dgvMappings";
+
+        _colOllamaName.HeaderText = "Ollama Name";
+        _colOllamaName.Name = "_colOllamaName";
+
+        _colLlamaCppName.DisplayStyleForCurrentCellOnly = true;
+        _colLlamaCppName.FlatStyle = FlatStyle.Flat;
+        _colLlamaCppName.HeaderText = "llama.cpp Model";
+        _colLlamaCppName.Name = "_colLlamaCppName";
+        _colLlamaCppName.FillWeight = 120;
+
+        _colUpstreamUrl.HeaderText = "Upstream URL (override)";
+        _colUpstreamUrl.Name = "_colUpstreamUrl";
+        _colUpstreamUrl.FillWeight = 160;
+        _colUpstreamUrl.DefaultCellStyle.NullValue = string.Empty;
+
+        _colUpstreamTimeout.HeaderText = "Timeout (s)";
+        _colUpstreamTimeout.Name = "_colUpstreamTimeout";
+        _colUpstreamTimeout.Width = 80;
+        _colUpstreamTimeout.FillWeight = 50;
+        _colUpstreamTimeout.DefaultCellStyle.NullValue = "0";
+
+        _colUpstreamType.FlatStyle = FlatStyle.Flat;
+        _colUpstreamType.HeaderText = "Upstream";
+        _colUpstreamType.Items.AddRange(new object[] { "LlamaCpp" });
+        _colUpstreamType.Name = "_colUpstreamType";
+        _colUpstreamType.Width = 110;
+        _colUpstreamType.FillWeight = 60;
+
+        _btnAddMapping.AutoSize = true;
+        _btnAddMapping.Margin = new Padding(4, 8, 4, 4);
+        _btnAddMapping.Name = "_btnAddMapping";
+        _btnAddMapping.Text = "Add Mapping";
+        _btnAddMapping.Click += BtnAddMapping_Click;
+
+        _btnRemoveMapping.Anchor = AnchorStyles.Left;
+        _btnRemoveMapping.AutoSize = true;
+        _btnRemoveMapping.Margin = new Padding(4, 8, 4, 4);
+        _btnRemoveMapping.Name = "_btnRemoveMapping";
+        _btnRemoveMapping.Text = "Remove Selected";
+        _btnRemoveMapping.Click += BtnRemoveMapping_Click;
+
+        _btnFetchModels.Anchor = AnchorStyles.Right;
+        _btnFetchModels.AutoSize = true;
+        _btnFetchModels.Margin = new Padding(4, 8, 4, 4);
+        _btnFetchModels.Name = "_btnFetchModels";
+        _btnFetchModels.Text = "Fetch Models ↓";
+        _btnFetchModels.Click += BtnFetchModels_Click;
+
+        _btnSaveSettings.Anchor = AnchorStyles.Right;
+        _btnSaveSettings.AutoSize = true;
+        _btnSaveSettings.Margin = new Padding(4, 12, 4, 4);
+        _btnSaveSettings.Name = "_btnSaveSettings";
+        _btnSaveSettings.Text = "Save Settings";
+        _btnSaveSettings.Click += BtnSaveSettings_Click;
+
+        // _grpLogging
+        _grpLogging.AutoSize = true;
+        _grpLogging.AutoSizeMode = AutoSizeMode.GrowOnly;
+        _grpLogging.Controls.Add(_tlpLogging);
+        _grpLogging.Dock = DockStyle.Fill;
+        _grpLogging.Margin = new Padding(4, 8, 4, 4);
+        _grpLogging.Name = "_grpLogging";
+        _grpLogging.Text = "Logging";
+
+        // _tlpLogging
+        _tlpLogging.AutoSize = true;
+        _tlpLogging.AutoSizeMode = AutoSizeMode.GrowOnly;
+        _tlpLogging.ColumnCount = 2;
+        _tlpLogging.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _tlpLogging.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        _tlpLogging.Dock = DockStyle.Fill;
+        _tlpLogging.Margin = new Padding(4);
+        _tlpLogging.Name = "_tlpLogging";
+        _tlpLogging.RowCount = 6;
+        _tlpLogging.Controls.Add(_lblLogDir, 0, 0);
+        _tlpLogging.Controls.Add(_txtLogDir, 1, 0);
+        _tlpLogging.Controls.Add(_lblMinLevel, 0, 1);
+        _tlpLogging.Controls.Add(_cmbMinLevel, 1, 1);
+        _tlpLogging.Controls.Add(_lblAppLogSize, 0, 2);
+        _tlpLogging.Controls.Add(_txtAppLogSize, 1, 2);
+        _tlpLogging.Controls.Add(_lblAppLogRetain, 0, 3);
+        _tlpLogging.Controls.Add(_txtAppLogRetain, 1, 3);
+        _tlpLogging.Controls.Add(_lblReqLogSize, 0, 4);
+        _tlpLogging.Controls.Add(_txtReqLogSize, 1, 4);
+        _tlpLogging.Controls.Add(_lblLogRetention, 0, 5);
+        _tlpLogging.Controls.Add(_txtLogRetention, 1, 5);
+
+        _lblLogDir.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblLogDir.AutoSize = true;
+        _lblLogDir.Margin = new Padding(4, 8, 8, 4);
+        _lblLogDir.Name = "_lblLogDir";
+        _lblLogDir.Text = "Log Directory:";
+
+        _txtLogDir.Dock = DockStyle.Fill;
+        _txtLogDir.Margin = new Padding(4, 6, 4, 4);
+        _txtLogDir.Name = "_txtLogDir";
+
+        _lblMinLevel.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblMinLevel.AutoSize = true;
+        _lblMinLevel.Margin = new Padding(4, 8, 8, 4);
+        _lblMinLevel.Name = "_lblMinLevel";
+        _lblMinLevel.Text = "Minimum Level:";
+
+        _cmbMinLevel.Dock = DockStyle.Fill;
+        _cmbMinLevel.DropDownStyle = ComboBoxStyle.DropDownList;
+        _cmbMinLevel.Items.AddRange(new object[] { "Verbose", "Debug", "Information", "Warning", "Error", "Fatal" });
+        _cmbMinLevel.Margin = new Padding(4, 6, 4, 4);
+        _cmbMinLevel.Name = "_cmbMinLevel";
+
+        _lblAppLogSize.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblAppLogSize.AutoSize = true;
+        _lblAppLogSize.Margin = new Padding(4, 8, 8, 4);
+        _lblAppLogSize.Name = "_lblAppLogSize";
+        _lblAppLogSize.Text = "App Log File Limit (MB):";
+
+        _txtAppLogSize.Dock = DockStyle.Fill;
+        _txtAppLogSize.Margin = new Padding(4, 6, 4, 4);
+        _txtAppLogSize.Name = "_txtAppLogSize";
+
+        _lblAppLogRetain.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblAppLogRetain.AutoSize = true;
+        _lblAppLogRetain.Margin = new Padding(4, 8, 8, 4);
+        _lblAppLogRetain.Name = "_lblAppLogRetain";
+        _lblAppLogRetain.Text = "App Log Files to Keep:";
+
+        _txtAppLogRetain.Dock = DockStyle.Fill;
+        _txtAppLogRetain.Margin = new Padding(4, 6, 4, 4);
+        _txtAppLogRetain.Name = "_txtAppLogRetain";
+
+        _lblReqLogSize.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblReqLogSize.AutoSize = true;
+        _lblReqLogSize.Margin = new Padding(4, 8, 8, 4);
+        _lblReqLogSize.Name = "_lblReqLogSize";
+        _lblReqLogSize.Text = "Request DB File Limit (MB):";
+
+        _txtReqLogSize.Dock = DockStyle.Fill;
+        _txtReqLogSize.Margin = new Padding(4, 6, 4, 4);
+        _txtReqLogSize.Name = "_txtReqLogSize";
+
+        _lblLogRetention.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblLogRetention.AutoSize = true;
+        _lblLogRetention.Margin = new Padding(4, 8, 8, 4);
+        _lblLogRetention.Name = "_lblLogRetention";
+        _lblLogRetention.Text = "Log Retention (hours, 0=forever):";
+
+        _txtLogRetention.Dock = DockStyle.Fill;
+        _txtLogRetention.Margin = new Padding(4, 6, 4, 4);
+        _txtLogRetention.Name = "_txtLogRetention";
+
+        // _refreshTimer
+        _refreshTimer.Interval = 1500;
+        _refreshTimer.Tick += RefreshTimer_Tick;
+
+        // ── Test Console tab ──────────────────────────────────────────────────
+
+        // _tabTest
+        _tabTest.Controls.Add(_tlpTestOuter);
+        _tabTest.Dock = DockStyle.Fill;
+        _tabTest.Name = "_tabTest";
+        _tabTest.Padding = new Padding(8);
+        _tabTest.Text = "Test Console";
+
+        // _tlpTestOuter — 1 column, 4 rows: top bar | prompt label | prompt | response+status
+        _tlpTestOuter.ColumnCount = 1;
+        _tlpTestOuter.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        _tlpTestOuter.Controls.Add(_tlpTestTop, 0, 0);
+        _tlpTestOuter.Controls.Add(_txtTestPrompt, 0, 1);
+        _tlpTestOuter.Controls.Add(_txtTestResponse, 0, 2);
+        _tlpTestOuter.Controls.Add(_lblTestStatus, 0, 3);
+        _tlpTestOuter.Dock = DockStyle.Fill;
+        _tlpTestOuter.Name = "_tlpTestOuter";
+        _tlpTestOuter.RowCount = 4;
+        _tlpTestOuter.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _tlpTestOuter.RowStyles.Add(new RowStyle(SizeType.Percent, 25F));
+        _tlpTestOuter.RowStyles.Add(new RowStyle(SizeType.Percent, 75F));
+        _tlpTestOuter.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+        // _tlpTestTop — model label | combo | temp label | nud | Send | Clear
+        _tlpTestTop.AutoSize = true;
+        _tlpTestTop.AutoSizeMode = AutoSizeMode.GrowOnly;
+        _tlpTestTop.ColumnCount = 6;
+        _tlpTestTop.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _tlpTestTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        _tlpTestTop.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _tlpTestTop.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _tlpTestTop.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _tlpTestTop.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _tlpTestTop.Controls.Add(_lblTestModel, 0, 0);
+        _tlpTestTop.Controls.Add(_cmbTestModel, 1, 0);
+        _tlpTestTop.Controls.Add(_lblTestTemp, 2, 0);
+        _tlpTestTop.Controls.Add(_nudTestTemp, 3, 0);
+        _tlpTestTop.Controls.Add(_btnTestSend, 4, 0);
+        _tlpTestTop.Controls.Add(_btnTestClear, 5, 0);
+        _tlpTestTop.Dock = DockStyle.Fill;
+        _tlpTestTop.Margin = new Padding(0, 0, 0, 6);
+        _tlpTestTop.Name = "_tlpTestTop";
+        _tlpTestTop.RowCount = 1;
+
+        _lblTestModel.Anchor = AnchorStyles.Left;
+        _lblTestModel.AutoSize = true;
+        _lblTestModel.Margin = new Padding(0, 0, 6, 0);
+        _lblTestModel.Name = "_lblTestModel";
+        _lblTestModel.Text = "Model:";
+
+        _cmbTestModel.Dock = DockStyle.Fill;
+        _cmbTestModel.DropDownStyle = ComboBoxStyle.DropDownList;
+        _cmbTestModel.Margin = new Padding(0, 2, 8, 2);
+        _cmbTestModel.Name = "_cmbTestModel";
+
+        _lblTestTemp.Anchor = AnchorStyles.Left;
+        _lblTestTemp.AutoSize = true;
+        _lblTestTemp.Margin = new Padding(0, 0, 4, 0);
+        _lblTestTemp.Name = "_lblTestTemp";
+        _lblTestTemp.Text = "Temp:";
+
+        _nudTestTemp.DecimalPlaces = 2;
+        _nudTestTemp.Increment = new decimal(new int[] { 5, 0, 0, 131072 });
+        _nudTestTemp.Maximum = new decimal(new int[] { 2, 0, 0, 0 });
+        _nudTestTemp.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
+        _nudTestTemp.Margin = new Padding(0, 2, 8, 2);
+        _nudTestTemp.Name = "_nudTestTemp";
+        _nudTestTemp.Size = new Size(64, 25);
+        _nudTestTemp.Value = new decimal(new int[] { 70, 0, 0, 131072 });
+
+        _btnTestSend.Margin = new Padding(0, 2, 4, 2);
+        _btnTestSend.Name = "_btnTestSend";
+        _btnTestSend.Size = new Size(80, 28);
+        _btnTestSend.Text = "Send";
+        _btnTestSend.Click += BtnTestSend_Click;
+
+        _btnTestClear.Margin = new Padding(0, 2, 0, 2);
+        _btnTestClear.Name = "_btnTestClear";
+        _btnTestClear.Size = new Size(80, 28);
+        _btnTestClear.Text = "Clear";
+        _btnTestClear.Click += BtnTestClear_Click;
+
+        _txtTestPrompt.Dock = DockStyle.Fill;
+        _txtTestPrompt.Margin = new Padding(0, 0, 0, 4);
+        _txtTestPrompt.Multiline = true;
+        _txtTestPrompt.Name = "_txtTestPrompt";
+        _txtTestPrompt.PlaceholderText = "Enter your prompt here…";
+        _txtTestPrompt.ScrollBars = ScrollBars.Vertical;
+
+        _txtTestResponse.BackColor = SystemColors.Window;
+        _txtTestResponse.Dock = DockStyle.Fill;
+        _txtTestResponse.Font = new Font("Consolas", 9F);
+        _txtTestResponse.Margin = new Padding(0, 0, 0, 4);
+        _txtTestResponse.Multiline = true;
+        _txtTestResponse.Name = "_txtTestResponse";
+        _txtTestResponse.ReadOnly = true;
+        _txtTestResponse.ScrollBars = ScrollBars.Both;
+        _txtTestResponse.WordWrap = false;
+
+        _lblTestStatus.AutoSize = true;
+        _lblTestStatus.Dock = DockStyle.Fill;
+        _lblTestStatus.Margin = new Padding(0, 2, 0, 0);
+        _lblTestStatus.Name = "_lblTestStatus";
+        _lblTestStatus.Text = "Ready";
+
+        // MainForm
+        AutoScaleDimensions = new SizeF(7F, 15F);
+        AutoScaleMode = AutoScaleMode.Font;
+        ClientSize = new Size(740, 560);
+        Controls.Add(_tabControl);
+        FormBorderStyle = FormBorderStyle.FixedSingle;
+        MaximizeBox = false;
+        MinimumSize = new Size(756, 599);
+        MaximumSize = new Size(756, 599);
+        Name = "MainForm";
+        ShowInTaskbar = false;
+        Text = "Kaeo LLM Proxy";
+
+        _grpLogging.ResumeLayout(false);
+        _grpLogging.PerformLayout();
+        _tlpLogging.ResumeLayout(false);
+        _tlpLogging.PerformLayout();
+        _grpPerf.ResumeLayout(false);
+        _grpPerf.PerformLayout();
+        _tlpPerf.ResumeLayout(false);
+        _tlpPerf.PerformLayout();
+        _tabControl.ResumeLayout(false);
+        _tabDashboard.ResumeLayout(false);
+        _tabLogs.ResumeLayout(false);
+        _tabSettings.ResumeLayout(false);
+        _flpStatusButtons.ResumeLayout(false);
+        _flpStatusButtons.PerformLayout();
+        _pnlStatus.ResumeLayout(false);
+        _grpStatus.ResumeLayout(false);
+        _grpStatus.PerformLayout();
+        _tabTest.ResumeLayout(false);
+        _tlpTestOuter.ResumeLayout(false);
+        _tlpTestOuter.PerformLayout();
+        _tlpTestTop.ResumeLayout(false);
+        _tlpTestTop.PerformLayout();
+        ((System.ComponentModel.ISupportInitialize)_nudTestTemp).EndInit();
+        ((System.ComponentModel.ISupportInitialize)_dgvMappings).EndInit();
+        ResumeLayout(false);
+    }
+
+    private TabControl _tabControl;
+    private TabPage _tabDashboard;
+    private TabPage _tabLogs;
+    private TabPage _tabSettings;
+    private GroupBox _grpStatus;
+    private Panel _pnlStatus;
+    private FlowLayoutPanel _flpStatusButtons;
+    private Label _lblStatus;
+    private Label _lblStatusValue;
+    private Button _btnStart;
+    private Button _btnStop;
+    private Button _btnRestart;
+    private TableLayoutPanel _tlpStats;
+    private Label _lblTotalRequestsCaption;
+    private Label _lblTotalRequestsValue;
+    private Label _lblTotalErrorsCaption;
+    private Label _lblTotalErrorsValue;
+    private Label _lblPromptTokensCaption;
+    private Label _lblPromptTokensValue;
+    private Label _lblCompletionTokensCaption;
+    private Label _lblCompletionTokensValue;
+    private Label _lblRpsCaption;
+    private Label _lblRpsValue;
+    private Button _btnResetStats;
+    private GroupBox _grpPerf;
+    private TableLayoutPanel _tlpPerf;
+    private Label _lblCpuCaption;
+    private Label _lblCpuValue;
+    private Label _lblRamCaption;
+    private Label _lblRamValue;
+    private ListView _lstLogs;
+    private ColumnHeader _colTime;
+    private ColumnHeader _colMethod;
+    private ColumnHeader _colPath;
+    private ColumnHeader _colModel;
+    private ColumnHeader _colStatus;
+    private ColumnHeader _colDuration;
+    private ColumnHeader _colTokens;
+    private CheckBox _chkAutoRefresh;
+    private Button _btnClearLogs;
+    private TableLayoutPanel _tlpSettings;
+    private Label _lblListenPort;
+    private TextBox _txtListenPort;
+    private Label _lblMaxLogs;
+    private TextBox _txtMaxLogs;
+    private Label _lblMappings;
+    private DataGridView _dgvMappings;
+    private DataGridViewTextBoxColumn _colOllamaName;
+    private DataGridViewComboBoxColumn _colLlamaCppName;
+    private DataGridViewTextBoxColumn _colUpstreamUrl;
+    private DataGridViewTextBoxColumn _colUpstreamTimeout;
+    private DataGridViewComboBoxColumn _colUpstreamType;
+    private Button _btnAddMapping;
+    private Button _btnRemoveMapping;
+    private Button _btnFetchModels;
+    private Button _btnSaveSettings;
+    private CheckBox _chkAutoStart;
+    private CheckBox _chkStartWithDashboard;
+    private CheckBox _chkCollectDetails;
+    private System.Windows.Forms.Timer _refreshTimer;
+    private Button _btnRefreshLogs;
+    private Button _btnLogDetails;
+    private GroupBox _grpLogging;
+    private TableLayoutPanel _tlpLogging;
+    private Label _lblLogDir;
+    private TextBox _txtLogDir;
+    private Label _lblMinLevel;
+    private ComboBox _cmbMinLevel;
+    private Label _lblAppLogSize;
+    private TextBox _txtAppLogSize;
+    private Label _lblAppLogRetain;
+    private TextBox _txtAppLogRetain;
+    private Label _lblReqLogSize;
+    private TextBox _txtReqLogSize;
+    private Label _lblLogRetention;
+    private TextBox _txtLogRetention;
+
+    // Test Console
+    private TabPage _tabTest;
+    private TableLayoutPanel _tlpTestOuter;
+    private TableLayoutPanel _tlpTestTop;
+    private Label _lblTestModel;
+    private ComboBox _cmbTestModel;
+    private Label _lblTestTemp;
+    private NumericUpDown _nudTestTemp;
+    private Button _btnTestSend;
+    private Button _btnTestClear;
+    private TextBox _txtTestPrompt;
+    private TextBox _txtTestResponse;
+    private Label _lblTestStatus;
+}

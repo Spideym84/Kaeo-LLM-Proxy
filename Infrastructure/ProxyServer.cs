@@ -1,0 +1,110 @@
+using System.Net;
+using Kaeo.LlmProxy.Core.Models;
+using Kaeo.LlmProxy.Core.Services;
+
+namespace Kaeo.LlmProxy.Infrastructure;
+
+/// <summary>
+/// HTTP listener that accepts incoming Ollama-compatible requests and dispatches
+/// them to <see cref="OllamaProxyHandler"/>.
+/// </summary>
+internal sealed class ProxyServer(OllamaProxyHandler handler) : IDisposable
+{
+    private HttpListener? _listener;
+    private CancellationTokenSource? _cts;
+    private Task? _listenTask;
+    private readonly OllamaProxyHandler _handler = handler;
+
+    public bool IsRunning { get; private set; }
+
+    public event EventHandler<string>? StatusChanged;
+
+    public void Start(int port, string listenAddress = "localhost")
+    {
+        if (IsRunning)
+            return;
+
+        _listener = new HttpListener();
+
+        // Normalize the listen address
+        string host = listenAddress.Trim();
+
+        // Handle special cases
+        if (string.IsNullOrWhiteSpace(host))
+            host = "localhost";
+
+        // Convert "0.0.0.0" to "+" for HttpListener (which means all interfaces)
+        if (host == "0.0.0.0")
+            host = "+";
+
+        // Build prefix - using "+" or specific IPs may require admin or netsh urlacl reservation
+        string prefix = $"http://{host}:{port}/";
+
+        _listener.Prefixes.Add(prefix);
+        _listener.Start();
+
+        _cts = new CancellationTokenSource();
+        _listenTask = AcceptLoopAsync(_cts.Token);
+        IsRunning = true;
+
+        // Display friendly address for status
+        string displayHost = host == "+" ? "0.0.0.0" : host;
+        StatusChanged?.Invoke(this, $"Listening on {displayHost}:{port}");
+    }
+
+    public async Task RestartAsync(int port, string listenAddress = "localhost")
+    {
+        await StopAsync().ConfigureAwait(false);
+        Start(port, listenAddress);
+    }
+
+    public async Task StopAsync()
+    {
+        if (!IsRunning)
+            return;
+
+        IsRunning = false;
+        _cts?.Cancel();
+
+        _listener?.Stop();
+        _listener?.Close();
+
+        if (_listenTask is not null)
+        {
+            try { await _listenTask.ConfigureAwait(false); }
+            catch (OperationCanceledException) { }
+        }
+
+        StatusChanged?.Invoke(this, "Stopped");
+    }
+
+    private async Task AcceptLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            HttpListenerContext context;
+            try
+            {
+                context = await _listener!.GetContextAsync().WaitAsync(ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (HttpListenerException)
+            {
+                break;
+            }
+
+            // Fire-and-forget each request on the thread pool — we track errors inside the handler.
+            _ = Task.Run(() => _handler.HandleAsync(context, ct), ct);
+        }
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _listener?.Close();
+    }
+}
