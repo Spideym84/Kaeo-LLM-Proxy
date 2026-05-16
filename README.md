@@ -88,10 +88,13 @@ To allow connections from other machines on your network:
 
 ## License
 
-This project is licensed under the **Business Source License 1.1 (BUSL-1.1)**.  
-See [LICENSE](LICENSE) for the full text.
+This project is **free for personal, educational, and research use**.  
+See [LICENSE](LICENSE) for the full terms.
 
-In short: you may use, modify, and share the source for **non-commercial purposes**.
-Commercial use requires a separate agreement with the author.
-After four years from each release, the code for that release converts to the
-[Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) open-source license automatically.
+**Restrictions:**
+- ❌ Commercial use requires a separate license
+- ❌ Government use is prohibited
+- ❌ No derivative works for commercial gain
+- ✅ Attribution to the original creator is required
+
+For commercial licensing inquiries, please contact the repository owner.
