@@ -35,4 +35,11 @@ internal sealed class RequestLog
     /// Null when capture is disabled.
     /// </summary>
     public string? RequestBody { get; set; }
+
+    /// <summary>
+    /// Assembled LLM response text captured when <c>CollectResponseDetails</c> is enabled in settings.
+    /// For streaming responses this is the full text accumulated across all chunks.
+    /// Null when capture is disabled.
+    /// </summary>
+    public string? ResponseBody { get; set; }
 }

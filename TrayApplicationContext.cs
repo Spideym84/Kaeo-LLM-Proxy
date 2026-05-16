@@ -37,7 +37,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _trayIcon = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
+            Icon = Program.GetApplicationIcon(),
             Text = "Kaeo LLM Proxy",
             Visible = true,
             ContextMenuStrip = BuildContextMenu(),
@@ -133,6 +133,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             _mainForm = new MainForm(_settings, _stats, _server, _handler, _perfService);
             _mainForm.FormClosed += OnMainFormClosed;
+            _mainForm.MinimizedToTray += OnMainFormMinimizedToTray;
         }
 
         _mainForm.Show();
@@ -142,7 +143,82 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void OnMainFormClosed(object? sender, FormClosedEventArgs e)
     {
+        if (sender is MainForm mainForm)
+            mainForm.MinimizedToTray -= OnMainFormMinimizedToTray;
+
         _mainForm = null;
+    }
+
+    private void OnMainFormMinimizedToTray(object? sender, EventArgs e)
+    {
+        if (!_settings.ShowCloseToTrayNotification)
+            return;
+
+        using Form dialog = new()
+        {
+            Text = "Still Running",
+            ClientSize = new Size(420, 150),
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.CenterScreen,
+        };
+
+        TableLayoutPanel layout = new()
+        {
+            ColumnCount = 1,
+            Dock = DockStyle.Fill,
+            Padding = new Padding(12),
+            RowCount = 3,
+        };
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+        Label message = new()
+        {
+            AutoSize = true,
+            Dock = DockStyle.Fill,
+            Text = "Kaeo LLM Proxy is still running and is available in the notification area.",
+        };
+
+        CheckBox dontShowAgain = new()
+        {
+            AutoSize = true,
+            Text = "Don't show this again",
+        };
+
+        FlowLayoutPanel buttons = new()
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+        };
+
+        Button okButton = new()
+        {
+            AutoSize = true,
+            DialogResult = DialogResult.OK,
+            Text = "OK",
+        };
+
+        buttons.Controls.Add(okButton);
+        layout.Controls.Add(message, 0, 0);
+        layout.Controls.Add(dontShowAgain, 0, 1);
+        layout.Controls.Add(buttons, 0, 2);
+        dialog.AcceptButton = okButton;
+        dialog.Controls.Add(layout);
+
+        dialog.ShowDialog();
+
+        if (!dontShowAgain.Checked)
+            return;
+
+        _settings.ShowCloseToTrayNotification = false;
+        _settings.Save();
     }
 
     private async void OnExit(object? sender, EventArgs e)

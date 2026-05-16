@@ -103,10 +103,28 @@ internal sealed class AppSettings
     public bool StartWithDashboardOpen { get; set; } = false;
 
     /// <summary>
+    /// When true, show a notification dialog the first time the main window is closed to the tray.
+    /// Users can disable it from that dialog. Default: true.
+    /// </summary>
+    public bool ShowCloseToTrayNotification { get; set; } = true;
+
+    /// <summary>
     /// When true, the raw request body is captured into each <see cref="RequestLog"/> entry.
     /// Useful for debugging but increases memory and storage usage. Default: false.
     /// </summary>
     public bool CollectRequestDetails { get; set; } =
+#if DEBUG
+        true;
+#else
+        false;
+#endif
+
+    /// <summary>
+    /// When true, the assembled LLM response text is captured into each <see cref="RequestLog"/> entry.
+    /// For streaming responses this accumulates all chunks into a single string.
+    /// Useful for debugging but increases memory and storage usage. Default: false.
+    /// </summary>
+    public bool CollectResponseDetails { get; set; } =
 #if DEBUG
         true;
 #else
@@ -196,9 +214,18 @@ internal sealed class AppSettings
         sb.AppendLine("  // Default: false");
         sb.AppendLine($"  \"StartWithDashboardOpen\": {JsBool(StartWithDashboardOpen)},");
         sb.AppendLine();
+        sb.AppendLine("  // Show a reminder when closing the dashboard window that the app continues running in the notification area.");
+        sb.AppendLine("  // Can be disabled from the reminder dialog. Default: true");
+        sb.AppendLine($"  \"ShowCloseToTrayNotification\": {JsBool(ShowCloseToTrayNotification)},");
+        sb.AppendLine();
         sb.AppendLine("  // Capture the raw request body in each log entry for debugging.");
         sb.AppendLine("  // Increases memory and DB storage usage. Default: false");
         sb.AppendLine($"  \"CollectRequestDetails\": {JsBool(CollectRequestDetails)},");
+        sb.AppendLine();
+        sb.AppendLine("  // Capture the full LLM response text in each log entry for debugging.");
+        sb.AppendLine("  // For streaming responses, accumulates all chunks into a single string.");
+        sb.AppendLine("  // Increases memory and DB storage usage. Default: false");
+        sb.AppendLine($"  \"CollectResponseDetails\": {JsBool(CollectResponseDetails)},");
         sb.AppendLine();
         sb.AppendLine("  // \u2500\u2500\u2500 Model Name Mappings \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
         sb.AppendLine("  // Each entry maps an Ollama model name to a specific upstream server and llama.cpp model.");

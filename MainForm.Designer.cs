@@ -23,6 +23,7 @@ partial class MainForm
         _tabTest = new TabPage();
 
         // Dashboard controls
+        _tlpDashboard = new TableLayoutPanel();
         _grpStatus = new GroupBox();
         _pnlStatus = new Panel();
         _flpStatusButtons = new FlowLayoutPanel();
@@ -54,7 +55,15 @@ partial class MainForm
         _lblRamCaption = new Label();
         _lblRamValue = new Label();
 
+        // Dashboard proxy-control buttons
+        _flpDashboardButtons = new FlowLayoutPanel();
+        _btnDashStart = new Button();
+        _btnDashStop = new Button();
+        _btnDashRestart = new Button();
+
         // Logs controls
+        _tlpLogs = new TableLayoutPanel();
+        _flpLogsButtons = new FlowLayoutPanel();
         _lstLogs = new ListView();
         _colTime = new ColumnHeader();
         _colMethod = new ColumnHeader();
@@ -64,6 +73,8 @@ partial class MainForm
         _colDuration = new ColumnHeader();
         _colTokens = new ColumnHeader();
         _chkAutoRefresh = new CheckBox();
+        _lblRefreshInterval = new Label();
+        _cmbRefreshInterval = new ComboBox();
         _btnRefreshLogs = new Button();
         _btnClearLogs = new Button();
         _btnLogDetails = new Button();
@@ -88,6 +99,7 @@ partial class MainForm
         _chkAutoStart = new CheckBox();
         _chkStartWithDashboard = new CheckBox();
         _chkCollectDetails = new CheckBox();
+        _chkCollectResponseDetails = new CheckBox();
 
         _grpLogging = new GroupBox();
         _tlpLogging = new TableLayoutPanel();
@@ -123,9 +135,13 @@ partial class MainForm
         _tlpLogging.SuspendLayout();
         _grpPerf.SuspendLayout();
         _tlpPerf.SuspendLayout();
+        _tlpDashboard.SuspendLayout();
+        _flpDashboardButtons.SuspendLayout();
         _tabControl.SuspendLayout();
         _tabDashboard.SuspendLayout();
         _tabLogs.SuspendLayout();
+        _tlpLogs.SuspendLayout();
+        _flpLogsButtons.SuspendLayout();
         _tabSettings.SuspendLayout();
         _tabTest.SuspendLayout();
         _tlpTestOuter.SuspendLayout();
@@ -147,21 +163,36 @@ partial class MainForm
         _tabControl.SelectedIndex = 0;
 
         // _tabDashboard
-        _tabDashboard.Controls.Add(_grpStatus);
-        _tabDashboard.Controls.Add(_tlpStats);
-        _tabDashboard.Controls.Add(_grpPerf);
+        _tabDashboard.Controls.Add(_tlpDashboard);
         _tabDashboard.Dock = DockStyle.Fill;
         _tabDashboard.Name = "_tabDashboard";
         _tabDashboard.Padding = new Padding(8);
         _tabDashboard.Text = "Dashboard";
 
+        // _tlpDashboard
+        _tlpDashboard.ColumnCount = 1;
+        _tlpDashboard.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        _tlpDashboard.Controls.Add(_grpStatus, 0, 0);
+        _tlpDashboard.Controls.Add(_tlpStats, 0, 1);
+        _tlpDashboard.Controls.Add(_grpPerf, 0, 2);
+        _tlpDashboard.Controls.Add(_flpDashboardButtons, 0, 4);
+        _tlpDashboard.Dock = DockStyle.Fill;
+        _tlpDashboard.Name = "_tlpDashboard";
+        _tlpDashboard.RowCount = 5;
+        _tlpDashboard.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _tlpDashboard.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _tlpDashboard.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _tlpDashboard.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        _tlpDashboard.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
         // _grpStatus
-        _grpStatus.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        _grpStatus.AutoSize = true;
+        _grpStatus.AutoSizeMode = AutoSizeMode.GrowOnly;
         _grpStatus.Controls.Add(_pnlStatus);
-        _grpStatus.Location = new Point(8, 8);
+        _grpStatus.Dock = DockStyle.Fill;
+        _grpStatus.Margin = new Padding(0, 0, 0, 8);
         _grpStatus.Name = "_grpStatus";
         _grpStatus.Padding = new Padding(6, 2, 6, 4);
-        _grpStatus.Size = new Size(660, 52);
         _grpStatus.Text = "Proxy Status";
 
         // _pnlStatus — dock Fill; contains buttons (Dock=Right), then labels (Left/Fill)
@@ -216,7 +247,6 @@ partial class MainForm
         _btnRestart.Click += BtnRestart_Click;
 
         // _tlpStats
-        _tlpStats.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         _tlpStats.AutoSize = true;
         _tlpStats.AutoSizeMode = AutoSizeMode.GrowOnly;
         _tlpStats.ColumnCount = 4;
@@ -235,10 +265,10 @@ partial class MainForm
         _tlpStats.Controls.Add(_lblRpsCaption, 0, 2);
         _tlpStats.Controls.Add(_lblRpsValue, 1, 2);
         _tlpStats.Controls.Add(_btnResetStats, 3, 2);
-        _tlpStats.Location = new Point(8, 90);
+        _tlpStats.Dock = DockStyle.Fill;
+        _tlpStats.Margin = new Padding(0, 0, 0, 12);
         _tlpStats.Name = "_tlpStats";
         _tlpStats.Padding = new Padding(4);
-        _tlpStats.Size = new Size(660, 120);
 
         _lblTotalRequestsCaption.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         _lblTotalRequestsCaption.AutoSize = true;
@@ -308,11 +338,11 @@ partial class MainForm
         _lblRpsValue.Text = "0.00";
 
         // _grpPerf
-        _grpPerf.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         _grpPerf.AutoSize = true;
         _grpPerf.AutoSizeMode = AutoSizeMode.GrowOnly;
         _grpPerf.Controls.Add(_tlpPerf);
-        _grpPerf.Location = new Point(8, 230);
+        _grpPerf.Dock = DockStyle.Fill;
+        _grpPerf.Margin = new Padding(0, 0, 0, 12);
         _grpPerf.Name = "_grpPerf";
         _grpPerf.Text = "Process Performance";
 
@@ -356,47 +386,113 @@ partial class MainForm
         _lblRamValue.Name = "_lblRamValue";
         _lblRamValue.Text = "0 MB";
 
+        // _flpDashboardButtons — bottom of dashboard, centred row of large proxy-control buttons
+        _flpDashboardButtons.AutoSize = true;
+        _flpDashboardButtons.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        _flpDashboardButtons.Dock = DockStyle.Fill;
+        _flpDashboardButtons.FlowDirection = FlowDirection.LeftToRight;
+        _flpDashboardButtons.Margin = new Padding(0);
+        _flpDashboardButtons.Name = "_flpDashboardButtons";
+        _flpDashboardButtons.Padding = new Padding(0, 6, 0, 6);
+        _flpDashboardButtons.WrapContents = false;
+        _flpDashboardButtons.Controls.Add(_btnDashStart);
+        _flpDashboardButtons.Controls.Add(_btnDashStop);
+        _flpDashboardButtons.Controls.Add(_btnDashRestart);
+
+        _btnDashStart.Margin = new Padding(0, 0, 6, 0);
+        _btnDashStart.Name = "_btnDashStart";
+        _btnDashStart.Size = new Size(110, 34);
+        _btnDashStart.Text = "▶  Start";
+        _btnDashStart.Click += BtnStart_Click;
+
+        _btnDashStop.Margin = new Padding(0, 0, 6, 0);
+        _btnDashStop.Name = "_btnDashStop";
+        _btnDashStop.Size = new Size(110, 34);
+        _btnDashStop.Text = "■  Stop";
+        _btnDashStop.Click += BtnStop_Click;
+
+        _btnDashRestart.Margin = new Padding(0, 0, 0, 0);
+        _btnDashRestart.Name = "_btnDashRestart";
+        _btnDashRestart.Size = new Size(110, 34);
+        _btnDashRestart.Text = "↺  Restart";
+        _btnDashRestart.Click += BtnRestart_Click;
+
         // _tabLogs
-        _tabLogs.Controls.Add(_lstLogs);
-        _tabLogs.Controls.Add(_chkAutoRefresh);
-        _tabLogs.Controls.Add(_btnRefreshLogs);
-        _tabLogs.Controls.Add(_btnClearLogs);
-        _tabLogs.Controls.Add(_btnLogDetails);
+        _tabLogs.Controls.Add(_tlpLogs);
         _tabLogs.Dock = DockStyle.Fill;
         _tabLogs.Name = "_tabLogs";
         _tabLogs.Padding = new Padding(8);
         _tabLogs.Text = "Logs";
 
-        _chkAutoRefresh.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+        // _tlpLogs
+        _tlpLogs.ColumnCount = 1;
+        _tlpLogs.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        _tlpLogs.Controls.Add(_lstLogs, 0, 0);
+        _tlpLogs.Controls.Add(_flpLogsButtons, 0, 1);
+        _tlpLogs.Dock = DockStyle.Fill;
+        _tlpLogs.Name = "_tlpLogs";
+        _tlpLogs.RowCount = 2;
+        _tlpLogs.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        _tlpLogs.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+        // _flpLogsButtons
+        _flpLogsButtons.AutoSize = true;
+        _flpLogsButtons.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        _flpLogsButtons.Controls.Add(_chkAutoRefresh);
+        _flpLogsButtons.Controls.Add(_lblRefreshInterval);
+        _flpLogsButtons.Controls.Add(_cmbRefreshInterval);
+        _flpLogsButtons.Controls.Add(_btnRefreshLogs);
+        _flpLogsButtons.Controls.Add(_btnLogDetails);
+        _flpLogsButtons.Controls.Add(_btnClearLogs);
+        _flpLogsButtons.Dock = DockStyle.Fill;
+        _flpLogsButtons.FlowDirection = FlowDirection.LeftToRight;
+        _flpLogsButtons.Margin = new Padding(0, 8, 0, 0);
+        _flpLogsButtons.Name = "_flpLogsButtons";
+        _flpLogsButtons.WrapContents = false;
+
+        _chkAutoRefresh.Anchor = AnchorStyles.Left;
         _chkAutoRefresh.AutoSize = true;
         _chkAutoRefresh.Checked = true;
         _chkAutoRefresh.CheckState = CheckState.Checked;
-        _chkAutoRefresh.Location = new Point(8, 488);
+        _chkAutoRefresh.Margin = new Padding(0, 6, 8, 0);
         _chkAutoRefresh.Name = "_chkAutoRefresh";
         _chkAutoRefresh.Text = "Auto-refresh";
 
-        _btnRefreshLogs.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-        _btnRefreshLogs.Location = new Point(414, 484);
+        _lblRefreshInterval.Anchor = AnchorStyles.Left;
+        _lblRefreshInterval.AutoSize = true;
+        _lblRefreshInterval.Margin = new Padding(0, 6, 4, 0);
+        _lblRefreshInterval.Name = "_lblRefreshInterval";
+        _lblRefreshInterval.Text = "every";
+
+        _cmbRefreshInterval.Anchor = AnchorStyles.Left;
+        _cmbRefreshInterval.DropDownStyle = ComboBoxStyle.DropDownList;
+        _cmbRefreshInterval.Items.AddRange(new object[] { "1 s", "2 s", "5 s", "10 s", "30 s" });
+        _cmbRefreshInterval.Margin = new Padding(0, 2, 12, 0);
+        _cmbRefreshInterval.Name = "_cmbRefreshInterval";
+        _cmbRefreshInterval.Size = new Size(68, 23);
+        _cmbRefreshInterval.SelectedIndexChanged += CmbRefreshInterval_SelectedIndexChanged;
+
+        _btnRefreshLogs.Anchor = AnchorStyles.Left;
+        _btnRefreshLogs.Margin = new Padding(0, 0, 6, 0);
         _btnRefreshLogs.Name = "_btnRefreshLogs";
         _btnRefreshLogs.Size = new Size(88, 28);
         _btnRefreshLogs.Text = "Refresh";
         _btnRefreshLogs.Click += BtnRefreshLogs_Click;
 
-        _btnLogDetails.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-        _btnLogDetails.Location = new Point(508, 484);
+        _btnLogDetails.Anchor = AnchorStyles.Left;
+        _btnLogDetails.Margin = new Padding(0, 0, 6, 0);
         _btnLogDetails.Name = "_btnLogDetails";
         _btnLogDetails.Size = new Size(88, 28);
         _btnLogDetails.Text = "Details\u2026";
         _btnLogDetails.Click += BtnLogDetails_Click;
 
-        _btnClearLogs.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-        _btnClearLogs.Location = new Point(600, 484);
+        _btnClearLogs.Anchor = AnchorStyles.Left;
+        _btnClearLogs.Margin = new Padding(0);
         _btnClearLogs.Name = "_btnClearLogs";
         _btnClearLogs.Size = new Size(88, 28);
         _btnClearLogs.Text = "Clear";
         _btnClearLogs.Click += BtnClearLogs_Click;
 
-        _lstLogs.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
         _lstLogs.Columns.Add(_colTime);
         _lstLogs.Columns.Add(_colMethod);
         _lstLogs.Columns.Add(_colPath);
@@ -406,9 +502,9 @@ partial class MainForm
         _lstLogs.Columns.Add(_colTokens);
         _lstLogs.FullRowSelect = true;
         _lstLogs.GridLines = true;
-        _lstLogs.Location = new Point(8, 8);
+        _lstLogs.Dock = DockStyle.Fill;
+        _lstLogs.Margin = new Padding(0);
         _lstLogs.Name = "_lstLogs";
-        _lstLogs.Size = new Size(680, 472);
         _lstLogs.View = View.Details;
         _lstLogs.DoubleClick += LstLogs_DoubleClick;
 
@@ -455,15 +551,17 @@ partial class MainForm
         _tlpSettings.Controls.Add(_chkStartWithDashboard, 0, 3);
         _tlpSettings.SetColumnSpan(_chkCollectDetails, 2);
         _tlpSettings.Controls.Add(_chkCollectDetails, 0, 4);
-        _tlpSettings.Controls.Add(_lblMappings, 0, 5);
-        _tlpSettings.Controls.Add(_btnFetchModels, 1, 5);
+        _tlpSettings.SetColumnSpan(_chkCollectResponseDetails, 2);
+        _tlpSettings.Controls.Add(_chkCollectResponseDetails, 0, 5);
+        _tlpSettings.Controls.Add(_lblMappings, 0, 6);
+        _tlpSettings.Controls.Add(_btnFetchModels, 1, 6);
         _tlpSettings.SetColumnSpan(_dgvMappings, 2);
-        _tlpSettings.Controls.Add(_dgvMappings, 0, 6);
+        _tlpSettings.Controls.Add(_dgvMappings, 0, 7);
         _tlpSettings.SetColumnSpan(_btnAddMapping, 1);
-        _tlpSettings.Controls.Add(_btnAddMapping, 0, 7);
-        _tlpSettings.Controls.Add(_btnRemoveMapping, 1, 7);
+        _tlpSettings.Controls.Add(_btnAddMapping, 0, 8);
+        _tlpSettings.Controls.Add(_btnRemoveMapping, 1, 8);
         _tlpSettings.SetColumnSpan(_btnSaveSettings, 2);
-        _tlpSettings.Controls.Add(_btnSaveSettings, 0, 8);
+        _tlpSettings.Controls.Add(_btnSaveSettings, 0, 9);
 
         _lblListenPort.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         _lblListenPort.AutoSize = true;
@@ -496,9 +594,14 @@ partial class MainForm
         _chkStartWithDashboard.Text = "Open dashboard window on startup";
 
         _chkCollectDetails.AutoSize = true;
-        _chkCollectDetails.Margin = new Padding(4, 4, 4, 8);
+        _chkCollectDetails.Margin = new Padding(4, 4, 4, 4);
         _chkCollectDetails.Name = "_chkCollectDetails";
         _chkCollectDetails.Text = "Collect request details (captures raw request body into each log entry)";
+
+        _chkCollectResponseDetails.AutoSize = true;
+        _chkCollectResponseDetails.Margin = new Padding(4, 4, 4, 8);
+        _chkCollectResponseDetails.Name = "_chkCollectResponseDetails";
+        _chkCollectResponseDetails.Text = "Collect response details (captures LLM response text into each log entry)";
 
         _lblMappings.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         _lblMappings.AutoSize = true;
@@ -797,15 +900,22 @@ partial class MainForm
         _grpPerf.PerformLayout();
         _tlpPerf.ResumeLayout(false);
         _tlpPerf.PerformLayout();
+        _tlpDashboard.ResumeLayout(false);
+        _tlpDashboard.PerformLayout();
         _tabControl.ResumeLayout(false);
         _tabDashboard.ResumeLayout(false);
         _tabLogs.ResumeLayout(false);
+        _tlpLogs.ResumeLayout(false);
+        _tlpLogs.PerformLayout();
+        _flpLogsButtons.ResumeLayout(false);
+        _flpLogsButtons.PerformLayout();
         _tabSettings.ResumeLayout(false);
         _flpStatusButtons.ResumeLayout(false);
         _flpStatusButtons.PerformLayout();
         _pnlStatus.ResumeLayout(false);
         _grpStatus.ResumeLayout(false);
         _grpStatus.PerformLayout();
+        _flpDashboardButtons.ResumeLayout(false);
         _tabTest.ResumeLayout(false);
         _tlpTestOuter.ResumeLayout(false);
         _tlpTestOuter.PerformLayout();
@@ -820,6 +930,7 @@ partial class MainForm
     private TabPage _tabDashboard;
     private TabPage _tabLogs;
     private TabPage _tabSettings;
+    private TableLayoutPanel _tlpDashboard;
     private GroupBox _grpStatus;
     private Panel _pnlStatus;
     private FlowLayoutPanel _flpStatusButtons;
@@ -846,6 +957,12 @@ partial class MainForm
     private Label _lblCpuValue;
     private Label _lblRamCaption;
     private Label _lblRamValue;
+    private FlowLayoutPanel _flpDashboardButtons;
+    private Button _btnDashStart;
+    private Button _btnDashStop;
+    private Button _btnDashRestart;
+    private TableLayoutPanel _tlpLogs;
+    private FlowLayoutPanel _flpLogsButtons;
     private ListView _lstLogs;
     private ColumnHeader _colTime;
     private ColumnHeader _colMethod;
@@ -855,6 +972,8 @@ partial class MainForm
     private ColumnHeader _colDuration;
     private ColumnHeader _colTokens;
     private CheckBox _chkAutoRefresh;
+    private Label _lblRefreshInterval;
+    private ComboBox _cmbRefreshInterval;
     private Button _btnClearLogs;
     private TableLayoutPanel _tlpSettings;
     private Label _lblListenPort;
@@ -875,6 +994,7 @@ partial class MainForm
     private CheckBox _chkAutoStart;
     private CheckBox _chkStartWithDashboard;
     private CheckBox _chkCollectDetails;
+    private CheckBox _chkCollectResponseDetails;
     private System.Windows.Forms.Timer _refreshTimer;
     private Button _btnRefreshLogs;
     private Button _btnLogDetails;

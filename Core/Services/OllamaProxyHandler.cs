@@ -329,7 +329,20 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         }
 
         await using Stream upstreamStream = await upstreamResp.Content.ReadAsStreamAsync(ct);
-        await upstreamStream.CopyToAsync(resp.OutputStream, ct);
+
+        if (_settings.CollectResponseDetails)
+        {
+            using var buffer = new MemoryStream();
+            await upstreamStream.CopyToAsync(buffer, ct);
+            byte[] responseBytes = buffer.ToArray();
+            log.ResponseBody = Encoding.UTF8.GetString(responseBytes);
+            await resp.OutputStream.WriteAsync(responseBytes, ct);
+        }
+        else
+        {
+            await upstreamStream.CopyToAsync(resp.OutputStream, ct);
+        }
+
         resp.OutputStream.Close();
 
         log.Status = RequestStatus.Success;
@@ -594,7 +607,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         {
             resp.ContentType = "application/x-ndjson";
             resp.SendChunked = true;
-            await StreamCompletionToOllamaAsync(upstreamResp, resp, ollamaReq.Model, log, ct);
+            await StreamCompletionToOllamaAsync(upstreamResp, resp, ollamaReq.Model, log, _settings.CollectResponseDetails, ct);
         }
         else
         {
@@ -604,6 +617,9 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             LlamaCppUsage? usage = chunk?.Usage;
 
             FillTokenStats(log, usage);
+
+            if (_settings.CollectResponseDetails)
+                log.ResponseBody = text;
 
             var ollamaResp = new OllamaGenerateResponse
             {
@@ -671,7 +687,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         {
             resp.ContentType = "application/x-ndjson";
             resp.SendChunked = true;
-            await StreamChatToOllamaAsync(upstreamResp, resp, ollamaReq.Model, log, ct);
+            await StreamChatToOllamaAsync(upstreamResp, resp, ollamaReq.Model, log, _settings.CollectResponseDetails, ct);
         }
         else
         {
@@ -685,6 +701,9 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             FillTokenStats(log, usage);
 
             List<OllamaToolCall>? toolCalls = MapToolCallsToOllama(delta?.ToolCalls);
+
+            if (_settings.CollectResponseDetails)
+                log.ResponseBody = delta?.Content;
 
             var ollamaResp = new OllamaChatResponse
             {
@@ -744,11 +763,14 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         HttpListenerResponse resp,
         string modelName,
         RequestLog log,
+        bool collectResponse,
         CancellationToken ct)
     {
         await using Stream stream = await upstreamResp.Content.ReadAsStreamAsync(ct);
         using StreamReader reader = new(stream, Encoding.UTF8);
         await using StreamWriter writer = new(resp.OutputStream, Encoding.UTF8, leaveOpen: true);
+
+        var responseAccumulator = collectResponse ? new StringBuilder() : null;
 
         while (!ct.IsCancellationRequested)
         {
@@ -787,6 +809,8 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             string token = chunk.Choices?.FirstOrDefault()?.Text ?? string.Empty;
             bool done = chunk.Choices?.FirstOrDefault()?.FinishReason != null;
 
+            responseAccumulator?.Append(token);
+
             var ollamaChunk = new OllamaGenerateResponse
             {
                 Model = modelName,
@@ -798,6 +822,9 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             await writer.FlushAsync(ct);
         }
 
+        if (responseAccumulator is not null)
+            log.ResponseBody = responseAccumulator.ToString();
+
         resp.Close();
         log.Status = RequestStatus.Success;
     }
@@ -807,11 +834,14 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         HttpListenerResponse resp,
         string modelName,
         RequestLog log,
+        bool collectResponse,
         CancellationToken ct)
     {
         await using Stream stream = await upstreamResp.Content.ReadAsStreamAsync(ct);
         using StreamReader reader = new(stream, Encoding.UTF8);
         await using StreamWriter writer = new(resp.OutputStream, Encoding.UTF8, leaveOpen: true);
+
+        var responseAccumulator = collectResponse ? new StringBuilder() : null;
 
         while (!ct.IsCancellationRequested)
         {
@@ -851,6 +881,8 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             List<OllamaToolCall>? toolCalls = MapToolCallsToOllama(delta?.ToolCalls);
             bool done = chunk.Choices?.FirstOrDefault()?.FinishReason != null;
 
+            responseAccumulator?.Append(token);
+
             var ollamaChunk = new OllamaChatResponse
             {
                 Model = modelName,
@@ -862,6 +894,9 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             await writer.WriteLineAsync(JsonSerializer.Serialize(ollamaChunk, _jsonOptions));
             await writer.FlushAsync(ct);
         }
+
+        if (responseAccumulator is not null)
+            log.ResponseBody = responseAccumulator.ToString();
 
         resp.Close();
         log.Status = RequestStatus.Success;

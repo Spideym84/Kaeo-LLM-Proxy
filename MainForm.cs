@@ -17,6 +17,8 @@ internal partial class MainForm : Form
     private readonly OllamaProxyHandler _handler;
     private readonly PerformanceService _perfService;
 
+    internal event EventHandler? MinimizedToTray;
+
     private static readonly JsonSerializerOptions _indentedJsonOptions = new() { WriteIndented = true };
 
     public MainForm(AppSettings settings, StatisticsService stats, ProxyServer server, OllamaProxyHandler handler, PerformanceService perfService)
@@ -28,6 +30,7 @@ internal partial class MainForm : Form
         _perfService = perfService;
 
         InitializeComponent();
+        Icon = Program.GetApplicationIcon();
 
         _stats.StatsChanged += OnStatsChanged;
         _server.StatusChanged += OnServerStatusChanged;
@@ -41,6 +44,7 @@ internal partial class MainForm : Form
         RefreshStatus();
         RefreshStats();
         RefreshLogs();
+        _cmbRefreshInterval.SelectedIndex = 1; // default: 2 s
         _refreshTimer.Start();
         _tabControl.SelectedIndexChanged += TabControl_SelectedIndexChanged;
     }
@@ -52,6 +56,7 @@ internal partial class MainForm : Form
         {
             e.Cancel = true;
             Hide();
+            MinimizedToTray?.Invoke(this, EventArgs.Empty);
             return;
         }
         base.OnFormClosing(e);
@@ -76,6 +81,9 @@ internal partial class MainForm : Form
         _btnStart.Enabled = !running;
         _btnStop.Enabled = running;
         _btnRestart.Enabled = running;
+        _btnDashStart.Enabled = !running;
+        _btnDashStop.Enabled = running;
+        _btnDashRestart.Enabled = running;
     }
 
     private void OnServerStatusChanged(object? sender, string status)
@@ -255,16 +263,7 @@ internal partial class MainForm : Form
         {
             sb.AppendLine();
             sb.AppendLine("── Request Body ───────────────────────────────────────────────");
-            // Pretty-print JSON when possible
-            try
-            {
-                using JsonDocument doc = JsonDocument.Parse(log.RequestBody);
-                sb.AppendLine(JsonSerializer.Serialize(doc, _indentedJsonOptions));
-            }
-            catch
-            {
-                sb.AppendLine(log.RequestBody);
-            }
+            AppendBody(sb, log.RequestBody);
         }
 
         if (log.ExceptionId.HasValue)
@@ -304,7 +303,44 @@ internal partial class MainForm : Form
             StartPosition = FormStartPosition.CenterParent,
         };
 
-        var txt = new TextBox
+        TabControl tabControl = new()
+        {
+            Dock = DockStyle.Fill,
+            Name = "_tabLogDetails",
+        };
+
+        TabPage summaryTab = new()
+        {
+            Name = "_tabLogSummary",
+            Padding = new Padding(8),
+            Text = "Summary",
+        };
+
+        TextBox summaryText = CreateLogDetailsTextBox(sb.ToString());
+        summaryTab.Controls.Add(summaryText);
+        tabControl.Controls.Add(summaryTab);
+
+        if (log.ResponseBody is not null)
+        {
+            TabPage responseTab = new()
+            {
+                Name = "_tabLogResponseBody",
+                Padding = new Padding(8),
+                Text = "Response Body",
+            };
+
+            TextBox responseText = CreateLogDetailsTextBox(FormatBody(log.ResponseBody));
+            responseTab.Controls.Add(responseText);
+            tabControl.Controls.Add(responseTab);
+        }
+
+        detailForm.Controls.Add(tabControl);
+        detailForm.ShowDialog(this);
+    }
+
+    private static TextBox CreateLogDetailsTextBox(string text)
+    {
+        return new TextBox
         {
             Dock = DockStyle.Fill,
             Multiline = true,
@@ -312,17 +348,100 @@ internal partial class MainForm : Form
             ScrollBars = ScrollBars.Both,
             WordWrap = false,
             Font = new Font("Consolas", 9F),
-            Text = sb.ToString(),
+            Text = text,
         };
+    }
 
-        detailForm.Controls.Add(txt);
-        detailForm.ShowDialog(this);
+    private static void AppendBody(StringBuilder sb, string body)
+    {
+        sb.AppendLine(FormatBody(body));
+    }
+
+    private static string FormatBody(string body)
+    {
+        if (TryFormatJson(body, out string? formattedJson))
+            return formattedJson;
+
+        if (LooksLikeServerSentEvents(body))
+            return FormatServerSentEvents(body);
+
+        return body;
+    }
+
+    private static bool TryFormatJson(string body, out string formattedJson)
+    {
+        try
+        {
+            using JsonDocument doc = JsonDocument.Parse(body);
+            formattedJson = JsonSerializer.Serialize(doc, _indentedJsonOptions);
+            return true;
+        }
+        catch (JsonException)
+        {
+            formattedJson = string.Empty;
+            return false;
+        }
+    }
+
+    private static bool LooksLikeServerSentEvents(string body)
+    {
+        ReadOnlySpan<char> span = body.AsSpan().TrimStart();
+        return span.StartsWith("data:", StringComparison.OrdinalIgnoreCase)
+            || span.StartsWith("event:", StringComparison.OrdinalIgnoreCase)
+            || span.StartsWith("id:", StringComparison.OrdinalIgnoreCase)
+            || span.StartsWith("retry:", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FormatServerSentEvents(string body)
+    {
+        var sb = new StringBuilder();
+        using var reader = new StringReader(body);
+
+        while (reader.ReadLine() is string line)
+        {
+            if (line.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            {
+                string payload = line[5..].TrimStart();
+                if (string.Equals(payload, "[DONE]", StringComparison.Ordinal))
+                {
+                    sb.AppendLine("data: [DONE]");
+                    continue;
+                }
+
+                if (TryFormatJson(payload, out string? formattedPayload))
+                {
+                    sb.AppendLine("data:");
+                    using var payloadReader = new StringReader(formattedPayload);
+                    while (payloadReader.ReadLine() is string payloadLine)
+                        sb.Append("  ").AppendLine(payloadLine);
+                    continue;
+                }
+            }
+
+            sb.AppendLine(line);
+        }
+
+        return sb.ToString().TrimEnd();
     }
 
     private void RefreshTimer_Tick(object? sender, EventArgs e)
     {
         if (_tabControl.SelectedTab == _tabLogs && _chkAutoRefresh.Checked)
             RefreshLogs();
+    }
+
+    private void CmbRefreshInterval_SelectedIndexChanged(object? sender, EventArgs e)
+    {
+        int intervalMs = _cmbRefreshInterval.SelectedIndex switch
+        {
+            0 => 1_000,
+            1 => 2_000,
+            2 => 5_000,
+            3 => 10_000,
+            4 => 30_000,
+            _ => 2_000,
+        };
+        _refreshTimer.Interval = intervalMs;
     }
 
     // ── Settings ─────────────────────────────────────────────────────────────
@@ -334,6 +453,7 @@ internal partial class MainForm : Form
         _chkAutoStart.Checked = _settings.AutoStartProxy;
         _chkStartWithDashboard.Checked = _settings.StartWithDashboardOpen;
         _chkCollectDetails.Checked = _settings.CollectRequestDetails;
+        _chkCollectResponseDetails.Checked = _settings.CollectResponseDetails;
 
         _dgvMappings.Rows.Clear();
         foreach (ModelMapping mapping in _settings.ModelMappings)
@@ -421,6 +541,7 @@ internal partial class MainForm : Form
         _settings.AutoStartProxy = _chkAutoStart.Checked;
         _settings.StartWithDashboardOpen = _chkStartWithDashboard.Checked;
         _settings.CollectRequestDetails = _chkCollectDetails.Checked;
+        _settings.CollectResponseDetails = _chkCollectResponseDetails.Checked;
 
         _settings.Logging.LogDirectory = _txtLogDir.Text.Trim();
         _settings.Logging.MinimumLevel = _cmbMinLevel.SelectedItem?.ToString() ?? "Information";
