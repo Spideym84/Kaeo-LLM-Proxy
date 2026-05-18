@@ -29,6 +29,26 @@ internal sealed class ModelMapping
     /// Request timeout in seconds for this mapping. Default: 300 seconds if not specified or zero.
     /// </summary>
     public int UpstreamTimeoutSeconds { get; set; } = 300;
+
+    /// <summary>
+    /// Enable automatic context summarization when the model's context window is exceeded.
+    /// When enabled, the proxy will automatically summarize older conversation history
+    /// and retry the request with condensed context. Default: true.
+    /// </summary>
+    public bool EnableAutoSummarization { get; set; } = true;
+
+    /// <summary>
+    /// Number of recent message exchanges to preserve when summarizing context.
+    /// Older messages will be summarized into a single condensed message.
+    /// One exchange = user message + assistant response. Min: 2, Max: 20. Default: 4.
+    /// </summary>
+    public int PreserveRecentMessageCount { get; set; } = 4;
+
+    /// <summary>
+    /// Maximum number of times to retry with summarization on context overflow.
+    /// Prevents infinite retry loops. Min: 1, Max: 3. Default: 2.
+    /// </summary>
+    public int MaxSummarizationRetries { get; set; } = 2;
 }
 
 /// <summary>Logging configuration persisted inside settings.jsonc.</summary>

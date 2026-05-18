@@ -320,3 +320,19 @@ internal sealed class LlamaCppEmbeddingData
 {
     [JsonPropertyName("embedding")] public float[] Embedding { get; set; } = [];
 }
+
+// ─────────────────────────── Error responses ──────────────────────────────
+
+/// <summary>Standard error response from llama.cpp / OpenAI-compatible endpoints.</summary>
+internal sealed class LlamaCppErrorResponse
+{
+    [JsonPropertyName("error")] public LlamaCppErrorDetail? Error { get; set; }
+}
+
+internal sealed class LlamaCppErrorDetail
+{
+    [JsonPropertyName("message")] public string? Message { get; set; }
+    [JsonPropertyName("type")] public string? Type { get; set; }
+    [JsonPropertyName("code")] public int? Code { get; set; }
+}
+

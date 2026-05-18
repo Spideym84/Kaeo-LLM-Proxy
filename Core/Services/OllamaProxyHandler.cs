@@ -85,6 +85,43 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
     }
 
     /// <summary>
+    /// Checks if the upstream error response indicates a context size overflow.
+    /// Returns true if the error message contains "context" and "exceeded" or similar patterns.
+    /// </summary>
+    private static async Task<bool> IsContextOverflowErrorAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        if (response.IsSuccessStatusCode)
+            return false;
+
+        if ((int)response.StatusCode != 500)
+            return false;
+
+        try
+        {
+            string body = await response.Content.ReadAsStringAsync(ct);
+            if (string.IsNullOrWhiteSpace(body))
+                return false;
+
+            // Try to parse as structured error
+            LlamaCppErrorResponse? errorResp = JsonSerializer.Deserialize<LlamaCppErrorResponse>(body, _jsonOptions);
+            string? errorMessage = errorResp?.Error?.Message;
+
+            if (string.IsNullOrWhiteSpace(errorMessage))
+                errorMessage = body;
+
+            // Check for common context overflow patterns
+            return errorMessage.Contains("context", StringComparison.OrdinalIgnoreCase)
+                && (errorMessage.Contains("exceeded", StringComparison.OrdinalIgnoreCase)
+                 || errorMessage.Contains("too large", StringComparison.OrdinalIgnoreCase)
+                 || errorMessage.Contains("too long", StringComparison.OrdinalIgnoreCase));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Sends <paramref name="req"/> to the resolved upstream URL, enforcing the per-mapping timeout
     /// via a linked <see cref="CancellationTokenSource"/>.
     /// </summary>
@@ -284,6 +321,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             if (isJsonPost)
             {
                 string bodyText = await new System.IO.StreamReader(req.InputStream).ReadToEndAsync(ct);
+                log.RequestBytes = Encoding.UTF8.GetByteCount(bodyText);
                 if (_settings.CollectRequestDetails)
                     log.RequestBody = bodyText;
                 string rewritten = NormalizeRequestBody(bodyText, log, ShouldApplyThinkingCompatibility);
@@ -341,12 +379,15 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             using var buffer = new MemoryStream();
             await upstreamStream.CopyToAsync(buffer, ct);
             byte[] responseBytes = buffer.ToArray();
+            log.ResponseBytes = responseBytes.Length;
             log.ResponseBody = Encoding.UTF8.GetString(responseBytes);
             await resp.OutputStream.WriteAsync(responseBytes, ct);
         }
         else
         {
-            await upstreamStream.CopyToAsync(resp.OutputStream, ct);
+            using var countingStream = new CountingStream(resp.OutputStream);
+            await upstreamStream.CopyToAsync(countingStream, ct);
+            log.ResponseBytes = countingStream.BytesWritten;
         }
 
         resp.OutputStream.Close();
@@ -613,6 +654,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
     private async Task HandleGenerateAsync(HttpListenerRequest req, HttpListenerResponse resp, RequestLog log, CancellationToken ct)
     {
         string body = await ReadBodyAsync(req, ct);
+        log.RequestBytes = Encoding.UTF8.GetByteCount(body);
         if (_settings.CollectRequestDetails)
             log.RequestBody = body;
         OllamaGenerateRequest? ollamaReq = JsonSerializer.Deserialize<OllamaGenerateRequest>(body, _jsonOptions);
@@ -649,8 +691,9 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
         if (!upstreamResp.IsSuccessStatusCode)
         {
+            string errorBody = await upstreamResp.Content.ReadAsStringAsync(ct);
             log.Status = RequestStatus.Error;
-            log.ErrorMessage = $"Upstream {(int)upstreamResp.StatusCode}";
+            log.ErrorMessage = $"Upstream {(int)upstreamResp.StatusCode}: {errorBody}";
             resp.StatusCode = (int)upstreamResp.StatusCode;
             resp.Close();
             return;
@@ -670,6 +713,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             LlamaCppUsage? usage = chunk?.Usage;
 
             FillTokenStats(log, usage);
+            log.ResponseBytes = Encoding.UTF8.GetByteCount(respBody);
 
             if (_settings.CollectResponseDetails)
                 log.ResponseBody = text;
@@ -694,6 +738,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
     private async Task HandleChatAsync(HttpListenerRequest req, HttpListenerResponse resp, RequestLog log, CancellationToken ct)
     {
         string body = await ReadBodyAsync(req, ct);
+        log.RequestBytes = Encoding.UTF8.GetByteCount(body);
         if (_settings.CollectRequestDetails)
             log.RequestBody = body;
         OllamaChatRequest? ollamaReq = JsonSerializer.Deserialize<OllamaChatRequest>(body, _jsonOptions);
@@ -703,6 +748,12 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         log.Model = resolvedModel;
         log.Streaming = ollamaReq.Stream;
         var (chatBase, chatTimeout) = ResolveUpstream(ollamaReq.Model);
+
+        // Get model mapping for context management settings
+        ModelMapping? mapping = _settings.FindModelMapping(ollamaReq.Model);
+        bool enableAutoSummarization = mapping?.EnableAutoSummarization ?? true;
+        int preserveRecentCount = mapping?.PreserveRecentMessageCount ?? 4;
+        int maxRetries = mapping?.MaxSummarizationRetries ?? 2;
 
         // Map messages, then strip a trailing assistant response-prefill message.
         // Some clients append a final assistant turn to bias the next response, which
@@ -715,73 +766,165 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             messages.RemoveAt(messages.Count - 1);
         }
 
-        var llamaReq = new LlamaCppChatRequest
+        // Retry loop for context overflow handling
+        int retryCount = 0;
+        int originalMessageCount = messages.Count;
+
+        while (retryCount <= maxRetries)
         {
-            Model = resolvedModel,
-            Messages = messages,
-            Stream = ollamaReq.Stream,
-            Tools = MapTools(ollamaReq.Tools),
-            ResponseFormat = ResolveResponseFormat(ollamaReq.Format),
-            Temperature = ollamaReq.Options?.Temperature,
-            TopP = ollamaReq.Options?.TopP,
-            MaxTokens = ollamaReq.Options?.NumPredict,
-            Stop = ollamaReq.Options?.Stop,
-            Seed = ollamaReq.Options?.Seed,
-            PresencePenalty = ollamaReq.Options?.PresencePenalty,
-            FrequencyPenalty = ollamaReq.Options?.FrequencyPenalty,
-        };
+            var llamaReq = new LlamaCppChatRequest
+            {
+                Model = resolvedModel,
+                Messages = messages,
+                Stream = ollamaReq.Stream,
+                Tools = MapTools(ollamaReq.Tools),
+                ResponseFormat = ResolveResponseFormat(ollamaReq.Format),
+                Temperature = ollamaReq.Options?.Temperature,
+                TopP = ollamaReq.Options?.TopP,
+                MaxTokens = ollamaReq.Options?.NumPredict,
+                Stop = ollamaReq.Options?.Stop,
+                Seed = ollamaReq.Options?.Seed,
+                PresencePenalty = ollamaReq.Options?.PresencePenalty,
+                FrequencyPenalty = ollamaReq.Options?.FrequencyPenalty,
+            };
 
-        using StringContent chatContent = new(JsonSerializer.Serialize(llamaReq, _jsonOptions), Encoding.UTF8, "application/json");
-        using HttpResponseMessage upstreamResp = await SendUpstreamAsync(
-            new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions") { Content = chatContent },
-            chatBase, chatTimeout, HttpCompletionOption.ResponseHeadersRead, ct);
+            using StringContent chatContent = new(JsonSerializer.Serialize(llamaReq, _jsonOptions), Encoding.UTF8, "application/json");
+            using HttpResponseMessage upstreamResp = await SendUpstreamAsync(
+                new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions") { Content = chatContent },
+                chatBase, chatTimeout, HttpCompletionOption.ResponseHeadersRead, ct);
 
-        log.StatusCode = (int)upstreamResp.StatusCode;
+            log.StatusCode = (int)upstreamResp.StatusCode;
 
-        if (!upstreamResp.IsSuccessStatusCode)
-        {
-            log.Status = RequestStatus.Error;
-            log.ErrorMessage = $"Upstream {(int)upstreamResp.StatusCode}";
-            resp.StatusCode = (int)upstreamResp.StatusCode;
-            resp.Close();
+            // Check for context overflow error
+            bool isContextOverflow = await IsContextOverflowErrorAsync(upstreamResp, ct);
+
+            if (!upstreamResp.IsSuccessStatusCode)
+            {
+                // If context overflow and auto-summarization is enabled, try to summarize and retry
+                if (isContextOverflow && enableAutoSummarization && retryCount < maxRetries)
+                {
+                    retryCount++;
+                    log.ErrorMessage = $"Context overflow detected (attempt {retryCount}/{maxRetries}), summarizing...";
+
+                    // Summarize the conversation
+                    List<LlamaCppMessage> summarizedMessages = await SummarizeConversationAsync(
+                        messages,
+                        preserveRecentCount,
+                        chatBase,
+                        chatTimeout,
+                        resolvedModel,
+                        ct);
+
+                    // If summarization didn't reduce message count, stop retrying
+                    if (summarizedMessages.Count >= messages.Count)
+                    {
+                        log.Status = RequestStatus.Error;
+                        log.ErrorMessage = $"Upstream {(int)upstreamResp.StatusCode}: Context overflow, summarization did not help";
+                        log.SummarizationRetries = retryCount;
+                        log.OriginalMessageCount = originalMessageCount;
+                        resp.StatusCode = (int)upstreamResp.StatusCode;
+                        resp.Close();
+                        return;
+                    }
+
+                    // Track summarization in log
+                    log.SummarizationRetries = retryCount;
+                    log.OriginalMessageCount = originalMessageCount;
+                    log.SummarizedMessageCount = summarizedMessages.Count;
+
+                    // Update messages for next retry
+                    messages = summarizedMessages;
+                    continue; // Retry with summarized context
+                }
+
+                // Non-retriable error or retries exhausted
+                string nonRetriableErrorBody = await upstreamResp.Content.ReadAsStringAsync(ct);
+                log.Status = RequestStatus.Error;
+                log.ErrorMessage = isContextOverflow
+                    ? $"Upstream {(int)upstreamResp.StatusCode}: Context overflow after {retryCount} summarization attempts"
+                    : $"Upstream {(int)upstreamResp.StatusCode}: {nonRetriableErrorBody}";
+
+                if (retryCount > 0)
+                {
+                    log.SummarizationRetries = retryCount;
+                    log.OriginalMessageCount = originalMessageCount;
+                    log.SummarizedMessageCount = messages.Count;
+                }
+
+                resp.StatusCode = (int)upstreamResp.StatusCode;
+                resp.Close();
+                return;
+            }
+
+            // Success! Track summarization stats if any occurred
+            if (retryCount > 0)
+            {
+                log.SummarizationRetries = retryCount;
+                log.OriginalMessageCount = originalMessageCount;
+                log.SummarizedMessageCount = messages.Count;
+            }
+            if (ollamaReq.Stream)
+            {
+                resp.ContentType = "application/x-ndjson";
+                resp.SendChunked = true;
+
+                // Notify the calling AI in-band that the conversation was summarized
+                // before forwarding the real response. This is the first chunk so the
+                // AI sees it at the start of its context window update.
+                if (retryCount > 0)
+                    await WriteContextSummarizedNoticeAsync(resp, ollamaReq.Model, originalMessageCount, messages.Count, ct);
+
+                await StreamChatToOllamaAsync(upstreamResp, resp, ollamaReq.Model, log, _settings.CollectResponseDetails, ct);
+            }
+            else
+            {
+                string respBody = await upstreamResp.Content.ReadAsStringAsync(ct);
+                LlamaCppStreamChunk? chunk = JsonSerializer.Deserialize<LlamaCppStreamChunk>(respBody, _jsonOptions);
+
+                // Non-streaming: prefer .message over .delta (OpenAI non-streaming uses message)
+                LlamaCppDelta? delta = chunk?.Choices?.FirstOrDefault()?.Message
+                                    ?? chunk?.Choices?.FirstOrDefault()?.Delta;
+                LlamaCppUsage? usage = chunk?.Usage;
+                FillTokenStats(log, usage);
+                log.ResponseBytes = Encoding.UTF8.GetByteCount(respBody);
+
+                List<OllamaToolCall>? toolCalls = MapToolCallsToOllama(delta?.ToolCalls);
+
+                // Prepend a brief notice to the content so the calling AI sees it
+                // in its own context window.
+                string? content = delta?.Content;
+                if (retryCount > 0)
+                {
+                    string notice = BuildContextSummarizedNotice(originalMessageCount, messages.Count);
+                    content = string.IsNullOrEmpty(content) ? notice : notice + content;
+                }
+
+                if (_settings.CollectResponseDetails)
+                    log.ResponseBody = delta?.Content;
+
+                var ollamaResp = new OllamaChatResponse
+                {
+                    Model = ollamaReq.Model,
+                    Message = new OllamaMessage("assistant", content) { ToolCalls = toolCalls },
+                    Done = true,
+                    DoneReason = toolCalls?.Count > 0 ? "tool_calls" : "stop",
+                    PromptEvalCount = usage?.PromptTokens,
+                    EvalCount = usage?.CompletionTokens,
+                };
+
+                await WriteJsonAsync(resp, ollamaResp, ct);
+                log.Status = RequestStatus.Success;
+            }
+
+            // Request succeeded, break out of retry loop
             return;
         }
 
-        if (ollamaReq.Stream)
-        {
-            resp.ContentType = "application/x-ndjson";
-            resp.SendChunked = true;
-            await StreamChatToOllamaAsync(upstreamResp, resp, ollamaReq.Model, log, _settings.CollectResponseDetails, ct);
-        }
-        else
-        {
-            string respBody = await upstreamResp.Content.ReadAsStringAsync(ct);
-            LlamaCppStreamChunk? chunk = JsonSerializer.Deserialize<LlamaCppStreamChunk>(respBody, _jsonOptions);
-
-            // Non-streaming: prefer .message over .delta (OpenAI non-streaming uses message)
-            LlamaCppDelta? delta = chunk?.Choices?.FirstOrDefault()?.Message
-                                ?? chunk?.Choices?.FirstOrDefault()?.Delta;
-            LlamaCppUsage? usage = chunk?.Usage;
-            FillTokenStats(log, usage);
-
-            List<OllamaToolCall>? toolCalls = MapToolCallsToOllama(delta?.ToolCalls);
-
-            if (_settings.CollectResponseDetails)
-                log.ResponseBody = delta?.Content;
-
-            var ollamaResp = new OllamaChatResponse
-            {
-                Model = ollamaReq.Model,
-                Message = new OllamaMessage("assistant", delta?.Content) { ToolCalls = toolCalls },
-                Done = true,
-                DoneReason = toolCalls?.Count > 0 ? "tool_calls" : "stop",
-                PromptEvalCount = usage?.PromptTokens,
-                EvalCount = usage?.CompletionTokens,
-            };
-
-            await WriteJsonAsync(resp, ollamaResp, ct);
-            log.Status = RequestStatus.Success;
-        }
+        // Should never reach here, but handle it gracefully
+        log.Status = RequestStatus.Error;
+        log.ErrorMessage = "Max retries exceeded";
+        resp.StatusCode = 500;
+        resp.Close();
     }
 
     // ── /api/embeddings → POST /v1/embeddings ──────────────────────────────
@@ -822,6 +965,34 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
     // ── Streaming helpers ───────────────────────────────────────────────────
 
+    /// <summary>
+    /// Returns the one-line notice injected into assistant content when the conversation
+    /// was auto-summarized due to context overflow.
+    /// </summary>
+    private static string BuildContextSummarizedNotice(int originalCount, int summarizedCount) =>
+        $"[Note: conversation history was automatically summarized " +
+        $"({originalCount} → {summarizedCount} messages) because the context window was exhausted.]\n\n";
+
+    /// <summary>
+    /// Writes a single non-done streaming chunk containing the summarization notice
+    /// so the calling AI sees it as the first token of the reply.
+    /// </summary>
+    private static async Task WriteContextSummarizedNoticeAsync(
+        HttpListenerResponse resp, string modelName,
+        int originalCount, int summarizedCount,
+        CancellationToken ct)
+    {
+        string notice = BuildContextSummarizedNotice(originalCount, summarizedCount);
+        var noticeChunk = new OllamaChatResponse
+        {
+            Model = modelName,
+            Message = new OllamaMessage("assistant", notice),
+            Done = false,
+        };
+        byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(noticeChunk, _jsonOptions) + "\n");
+        await resp.OutputStream.WriteAsync(bytes, ct);
+    }
+
     private static async Task StreamCompletionToOllamaAsync(
         HttpResponseMessage upstreamResp,
         HttpListenerResponse resp,
@@ -835,6 +1006,8 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         await using StreamWriter writer = new(resp.OutputStream, Encoding.UTF8, leaveOpen: true);
 
         var responseAccumulator = collectResponse ? new StringBuilder() : null;
+        bool reachedDone = false;
+        long responseBytes = 0;
 
         while (!ct.IsCancellationRequested)
         {
@@ -848,6 +1021,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
             if (line == "[DONE]")
             {
+                reachedDone = true;
                 var doneChunk = new OllamaGenerateResponse
                 {
                     Model = modelName,
@@ -857,7 +1031,9 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                     PromptEvalCount = log.PromptTokens > 0 ? log.PromptTokens : null,
                     EvalCount = log.CompletionTokens > 0 ? log.CompletionTokens : null,
                 };
-                await writer.WriteLineAsync(JsonSerializer.Serialize(doneChunk, _jsonOptions));
+                string doneJson = JsonSerializer.Serialize(doneChunk, _jsonOptions);
+                responseBytes += Encoding.UTF8.GetByteCount(doneJson);
+                await writer.WriteLineAsync(doneJson);
                 await writer.FlushAsync(ct);
                 break;
             }
@@ -882,15 +1058,20 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                 Done = done,
             };
 
-            await writer.WriteLineAsync(JsonSerializer.Serialize(ollamaChunk, _jsonOptions));
+            string chunkJson = JsonSerializer.Serialize(ollamaChunk, _jsonOptions);
+            responseBytes += Encoding.UTF8.GetByteCount(chunkJson);
+            await writer.WriteLineAsync(chunkJson);
             await writer.FlushAsync(ct);
         }
 
         if (responseAccumulator is not null)
             log.ResponseBody = responseAccumulator.ToString();
 
+        log.ResponseBytes = responseBytes;
         resp.Close();
-        log.Status = RequestStatus.Success;
+        log.Status = ct.IsCancellationRequested && !reachedDone
+            ? RequestStatus.Cancelled
+            : RequestStatus.Success;
     }
 
     private static async Task StreamChatToOllamaAsync(
@@ -906,6 +1087,8 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         await using StreamWriter writer = new(resp.OutputStream, Encoding.UTF8, leaveOpen: true);
 
         var responseAccumulator = collectResponse ? new StringBuilder() : null;
+        bool reachedDone = false;
+        long responseBytes = 0;
 
         while (!ct.IsCancellationRequested)
         {
@@ -918,6 +1101,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
             if (line == "[DONE]")
             {
+                reachedDone = true;
                 var doneChunk = new OllamaChatResponse
                 {
                     Model = modelName,
@@ -927,7 +1111,9 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                     PromptEvalCount = log.PromptTokens > 0 ? log.PromptTokens : null,
                     EvalCount = log.CompletionTokens > 0 ? log.CompletionTokens : null,
                 };
-                await writer.WriteLineAsync(JsonSerializer.Serialize(doneChunk, _jsonOptions));
+                string doneJson = JsonSerializer.Serialize(doneChunk, _jsonOptions);
+                responseBytes += Encoding.UTF8.GetByteCount(doneJson);
+                await writer.WriteLineAsync(doneJson);
                 await writer.FlushAsync(ct);
                 break;
             }
@@ -955,15 +1141,20 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                 DoneReason = done ? (toolCalls?.Count > 0 ? "tool_calls" : "stop") : null,
             };
 
-            await writer.WriteLineAsync(JsonSerializer.Serialize(ollamaChunk, _jsonOptions));
+            string chunkJson = JsonSerializer.Serialize(ollamaChunk, _jsonOptions);
+            responseBytes += Encoding.UTF8.GetByteCount(chunkJson);
+            await writer.WriteLineAsync(chunkJson);
             await writer.FlushAsync(ct);
         }
 
         if (responseAccumulator is not null)
             log.ResponseBody = responseAccumulator.ToString();
 
+        log.ResponseBytes = responseBytes;
         resp.Close();
-        log.Status = RequestStatus.Success;
+        log.Status = ct.IsCancellationRequested && !reachedDone
+            ? RequestStatus.Cancelled
+            : RequestStatus.Success;
     }
 
     // ── Mapping helpers ──────────────────────────────────────────────────────
@@ -1054,6 +1245,151 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         return req.Prompt ?? string.Empty;
     }
 
+    // ── Context Management ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Summarizes older messages in a conversation to reduce context size while preserving recent exchanges.
+    /// Keeps system messages and the most recent N message exchanges, summarizes everything in between.
+    /// </summary>
+    private async Task<List<LlamaCppMessage>> SummarizeConversationAsync(
+        List<LlamaCppMessage> messages,
+        int preserveRecentCount,
+        string baseUrl,
+        int timeoutSeconds,
+        string modelName,
+        CancellationToken ct)
+    {
+        if (messages.Count <= preserveRecentCount + 1)
+            return messages; // Nothing to summarize
+
+        // Separate system messages, messages to summarize, and recent messages
+        List<LlamaCppMessage> systemMessages = [];
+
+        // First pass: collect system messages
+        foreach (LlamaCppMessage msg in messages)
+        {
+            if (msg.Role.Equals("system", StringComparison.OrdinalIgnoreCase))
+                systemMessages.Add(msg);
+        }
+
+        // Second pass: collect non-system messages
+        List<LlamaCppMessage> conversationMessages = [];
+        foreach (LlamaCppMessage msg in messages)
+        {
+            if (!msg.Role.Equals("system", StringComparison.OrdinalIgnoreCase))
+                conversationMessages.Add(msg);
+        }
+
+        // Split conversation into old (to summarize) and recent (to preserve)
+        int messagesToPreserve = Math.Min(preserveRecentCount, conversationMessages.Count);
+        int splitPoint = conversationMessages.Count - messagesToPreserve;
+
+        if (splitPoint <= 0)
+            return messages; // Nothing to summarize
+
+        List<LlamaCppMessage> oldMessages = [.. conversationMessages.Take(splitPoint)];
+        List<LlamaCppMessage> recentMessages = [.. conversationMessages.Skip(splitPoint)];
+
+        if (oldMessages.Count == 0)
+            return messages; // Nothing to summarize
+
+        // Build summarization prompt
+        string conversationText = BuildConversationTextForSummary(oldMessages);
+
+        List<LlamaCppMessage> summaryRequest =
+        [
+            new LlamaCppMessage("system", 
+                "You are a helpful assistant that summarizes conversations concisely. " +
+                "Preserve key facts, decisions, context, and important details. " +
+                "Focus on what's essential for continuing the conversation. " +
+                "Respond with ONLY the summary, no preamble or meta-commentary."),
+            new LlamaCppMessage("user", 
+                $"Please provide a concise summary of the following conversation:\n\n{conversationText}")
+        ];
+
+        var summaryRequestObj = new LlamaCppChatRequest
+        {
+            Model = modelName,
+            Messages = summaryRequest,
+            Stream = false,
+            Temperature = 0.3f, // Lower temperature for consistent summarization
+            MaxTokens = 500, // Limit summary length
+        };
+
+        try
+        {
+            using StringContent summaryContent = new(
+                JsonSerializer.Serialize(summaryRequestObj, _jsonOptions), 
+                Encoding.UTF8, 
+                "application/json");
+
+            using HttpResponseMessage summaryResp = await SendUpstreamAsync(
+                new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions") { Content = summaryContent },
+                baseUrl, 
+                timeoutSeconds, 
+                HttpCompletionOption.ResponseHeadersRead, 
+                ct);
+
+            if (!summaryResp.IsSuccessStatusCode)
+                return messages; // Summarization failed, return original
+
+            string respBody = await summaryResp.Content.ReadAsStringAsync(ct);
+            LlamaCppStreamChunk? chunk = JsonSerializer.Deserialize<LlamaCppStreamChunk>(respBody, _jsonOptions);
+
+            LlamaCppDelta? delta = chunk?.Choices?.FirstOrDefault()?.Message 
+                                ?? chunk?.Choices?.FirstOrDefault()?.Delta;
+
+            if (delta?.Content is null || string.IsNullOrWhiteSpace(delta.Content))
+                return messages; // No summary generated, return original
+
+            // Build new message list: system messages + summary + recent messages
+            List<LlamaCppMessage> result = [.. systemMessages];
+
+            // Add summary as an assistant message
+            result.Add(new LlamaCppMessage("assistant", 
+                $"[Previous conversation summary: {delta.Content}]"));
+
+            result.AddRange(recentMessages);
+
+            return result;
+        }
+        catch
+        {
+            // If summarization fails for any reason, return original messages
+            return messages;
+        }
+    }
+
+    /// <summary>
+    /// Builds a formatted text representation of messages for summarization.
+    /// </summary>
+    private static string BuildConversationTextForSummary(List<LlamaCppMessage> messages)
+    {
+        var sb = new StringBuilder();
+        foreach (LlamaCppMessage msg in messages)
+        {
+            string role = msg.Role switch
+            {
+                "user" => "User",
+                "assistant" => "Assistant",
+                "system" => "System",
+                _ => msg.Role
+            };
+
+            if (!string.IsNullOrWhiteSpace(msg.Content))
+            {
+                sb.AppendLine($"{role}: {msg.Content}");
+                sb.AppendLine();
+            }
+            else if (msg.ToolCalls?.Count > 0)
+            {
+                sb.AppendLine($"{role}: [Called tools: {string.Join(", ", msg.ToolCalls.Select(tc => tc.Function?.Name ?? "unknown"))}]");
+                sb.AppendLine();
+            }
+        }
+        return sb.ToString().TrimEnd();
+    }
+
     // ── Utility ──────────────────────────────────────────────────────────────
 
     private static async Task<string> ReadBodyAsync(HttpListenerRequest req, CancellationToken ct)
@@ -1077,5 +1413,39 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         if (usage is null) return;
         log.PromptTokens = usage.PromptTokens;
         log.CompletionTokens = usage.CompletionTokens;
+    }
+
+    /// <summary>Wraps a write-only stream and counts the bytes written through it.</summary>
+    private sealed class CountingStream(Stream inner) : Stream
+    {
+        public long BytesWritten { get; private set; }
+
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() => inner.Flush();
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            inner.Write(buffer, offset, count);
+            BytesWritten += count;
+        }
+
+        public override async Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken ct)
+        {
+            await inner.WriteAsync(buffer, offset, count, ct);
+            BytesWritten += count;
+        }
+
+        public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken ct = default)
+        {
+            await inner.WriteAsync(buffer, ct);
+            BytesWritten += buffer.Length;
+        }
     }
 }

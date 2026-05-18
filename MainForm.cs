@@ -197,6 +197,7 @@ internal partial class MainForm : Form
             item.SubItems.Add(log.Status.ToString());
             item.SubItems.Add($"{log.DurationMs:F0}");
             item.SubItems.Add($"{log.PromptTokens}+{log.CompletionTokens}");
+            item.SubItems.Add(FormatBytes(log.RequestBytes, log.ResponseBytes));
             item.Tag = log;
 
             item.ForeColor = log.Status switch
@@ -251,6 +252,7 @@ internal partial class MainForm : Form
         sb.AppendLine($"Streaming : {log.Streaming}");
         sb.AppendLine($"Duration  : {log.DurationMs:F1} ms");
         sb.AppendLine($"Tokens    : {log.PromptTokens} prompt + {log.CompletionTokens} completion");
+        sb.AppendLine($"Bytes     : {FormatBytes(log.RequestBytes, log.ResponseBytes)} (request / response)");
 
         if (!string.IsNullOrEmpty(log.ErrorMessage))
         {
@@ -350,6 +352,18 @@ internal partial class MainForm : Form
             Font = new Font("Consolas", 9F),
             Text = text,
         };
+    }
+
+    private static string FormatBytes(long requestBytes, long responseBytes)
+    {
+        static string Fmt(long b) => b switch
+        {
+            < 0 => "?",
+            < 1024 => $"{b} B",
+            < 1024 * 1024 => $"{b / 1024.0:F1} KB",
+            _ => $"{b / (1024.0 * 1024):F2} MB",
+        };
+        return $"{Fmt(requestBytes)} / {Fmt(responseBytes)}";
     }
 
     private static void AppendBody(StringBuilder sb, string body)

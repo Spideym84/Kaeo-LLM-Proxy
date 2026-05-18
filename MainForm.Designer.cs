@@ -72,6 +72,7 @@ partial class MainForm
         _colStatus = new ColumnHeader();
         _colDuration = new ColumnHeader();
         _colTokens = new ColumnHeader();
+        _colBytes = new ColumnHeader();
         _chkAutoRefresh = new CheckBox();
         _lblRefreshInterval = new Label();
         _cmbRefreshInterval = new ComboBox();
@@ -501,6 +502,7 @@ partial class MainForm
         _lstLogs.Columns.Add(_colStatus);
         _lstLogs.Columns.Add(_colDuration);
         _lstLogs.Columns.Add(_colTokens);
+        _lstLogs.Columns.Add(_colBytes);
         _lstLogs.FullRowSelect = true;
         _lstLogs.GridLines = true;
         _lstLogs.Dock = DockStyle.Fill;
@@ -523,6 +525,8 @@ partial class MainForm
         _colDuration.Width = 60;
         _colTokens.Text = "Tokens";
         _colTokens.Width = 80;
+        _colBytes.Text = "Bytes (req/resp)";
+        _colBytes.Width = 110;
 
         // _tabSettings
         _tabSettings.AutoScroll = true;
@@ -979,6 +983,7 @@ partial class MainForm
     private ColumnHeader _colStatus;
     private ColumnHeader _colDuration;
     private ColumnHeader _colTokens;
+    private ColumnHeader _colBytes;
     private CheckBox _chkAutoRefresh;
     private Label _lblRefreshInterval;
     private ComboBox _cmbRefreshInterval;
