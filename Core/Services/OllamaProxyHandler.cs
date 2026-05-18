@@ -78,6 +78,12 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             "Add a mapping in settings with OllamaName, LlamaCppName, and UpstreamUrl.");
     }
 
+    private bool ShouldApplyThinkingCompatibility(string modelName)
+    {
+        ModelMapping? mapping = _settings.FindModelMapping(modelName);
+        return mapping?.EnableThinkingCompatibility ?? true;
+    }
+
     /// <summary>
     /// Sends <paramref name="req"/> to the resolved upstream URL, enforcing the per-mapping timeout
     /// via a linked <see cref="CancellationTokenSource"/>.
@@ -280,7 +286,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                 string bodyText = await new System.IO.StreamReader(req.InputStream).ReadToEndAsync(ct);
                 if (_settings.CollectRequestDetails)
                     log.RequestBody = bodyText;
-                string rewritten = NormalizeRequestBody(bodyText, log);
+                string rewritten = NormalizeRequestBody(bodyText, log, ShouldApplyThinkingCompatibility);
                 originalModel = log.Model; // set by NormalizeRequestBody
                 byte[] bodyBytes = System.Text.Encoding.UTF8.GetBytes(rewritten);
                 upstreamReq.Content = new ByteArrayContent(bodyBytes);
@@ -355,10 +361,11 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
     ///   <item>Merges multiple consecutive leading system messages into a single one,
     ///         separated by a blank line, so that strict Jinja templates (e.g. Qwen3)
     ///         that only allow one system message do not raise an exception.</item>
+    ///   <item>Removes a trailing assistant response-prefill message, because some upstreams reject it when thinking mode is enabled.</item>
     /// </list>
     /// Returns the original text unchanged if the body isn't valid JSON.
     /// </summary>
-    private string NormalizeRequestBody(string json, RequestLog log)
+    private string NormalizeRequestBody(string json, RequestLog log, Func<string, bool>? shouldApplyThinkingCompatibility = null)
     {
         try
         {
@@ -372,14 +379,18 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
             string resolved = _settings.ResolveModelName(original);
             log.Model = original;
+            bool applyThinkingCompatibility = shouldApplyThinkingCompatibility?.Invoke(original) ?? true;
 
             // Check whether the messages array has consecutive leading system messages.
             bool hasConsecutiveSystemMessages = false;
+            bool hasTrailingAssistantPrefill = false;
             if (root.TryGetProperty("messages", out JsonElement messagesEl)
                 && messagesEl.ValueKind == JsonValueKind.Array)
             {
+                List<JsonElement> messages = [.. messagesEl.EnumerateArray()];
+
                 int leadingSystem = 0;
-                foreach (JsonElement msg in messagesEl.EnumerateArray())
+                foreach (JsonElement msg in messages)
                 {
                     if (msg.TryGetProperty("role", out JsonElement role)
                         && role.GetString()?.Equals("system", StringComparison.OrdinalIgnoreCase) == true)
@@ -389,10 +400,15 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                 }
 
                 hasConsecutiveSystemMessages = leadingSystem > 1;
+                hasTrailingAssistantPrefill = applyThinkingCompatibility
+                    && messages.Count > 0
+                    && IsAssistantResponsePrefill(messages[^1]);
             }
 
             // Nothing to rewrite — return original text unchanged.
-            if (string.Equals(original, resolved, StringComparison.Ordinal) && !hasConsecutiveSystemMessages)
+            if (string.Equals(original, resolved, StringComparison.Ordinal)
+                && !hasConsecutiveSystemMessages
+                && !hasTrailingAssistantPrefill)
                 return json;
 
             using var ms = new System.IO.MemoryStream();
@@ -407,18 +423,25 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                     writer.WriteString("model", resolved);
                 }
                 else if (prop.Name.Equals("messages", StringComparison.OrdinalIgnoreCase)
-                      && hasConsecutiveSystemMessages
-                      && prop.Value.ValueKind == JsonValueKind.Array)
+                      && prop.Value.ValueKind == JsonValueKind.Array
+                      && (hasConsecutiveSystemMessages || hasTrailingAssistantPrefill))
                 {
                     writer.WritePropertyName("messages");
                     writer.WriteStartArray();
+
+                    List<JsonElement> messages = [.. prop.Value.EnumerateArray()];
 
                     // Collect and merge consecutive leading system message contents.
                     var systemParts = new List<string>();
                     bool merging = true;
 
-                    foreach (JsonElement msg in prop.Value.EnumerateArray())
+                    for (int i = 0; i < messages.Count; i++)
                     {
+                        JsonElement msg = messages[i];
+
+                        if (hasTrailingAssistantPrefill && i == messages.Count - 1 && IsAssistantResponsePrefill(msg))
+                            continue;
+
                         bool isSystem = merging
                             && msg.TryGetProperty("role", out JsonElement r)
                             && r.GetString()?.Equals("system", StringComparison.OrdinalIgnoreCase) == true;
@@ -474,6 +497,36 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             return json;
         }
     }
+
+    private static bool IsAssistantResponsePrefill(JsonElement message)
+    {
+        if (!message.TryGetProperty("role", out JsonElement role)
+            || !string.Equals(role.GetString(), "assistant", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (message.TryGetProperty("tool_calls", out JsonElement toolCalls)
+            && toolCalls.ValueKind == JsonValueKind.Array
+            && toolCalls.GetArrayLength() > 0)
+        {
+            return false;
+        }
+
+        if (message.TryGetProperty("tool_call_id", out JsonElement toolCallId)
+            && toolCallId.ValueKind == JsonValueKind.String
+            && !string.IsNullOrWhiteSpace(toolCallId.GetString()))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsAssistantResponsePrefill(LlamaCppMessage message) =>
+        string.Equals(message.Role, "assistant", StringComparison.OrdinalIgnoreCase)
+        && (message.ToolCalls is null || message.ToolCalls.Count == 0)
+        && string.IsNullOrWhiteSpace(message.ToolCallId);
 
     // ── /api/tags → GET /v1/models ──────────────────────────────────────────
 
@@ -651,10 +704,21 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         log.Streaming = ollamaReq.Stream;
         var (chatBase, chatTimeout) = ResolveUpstream(ollamaReq.Model);
 
+        // Map messages, then strip a trailing assistant response-prefill message.
+        // Some clients append a final assistant turn to bias the next response, which
+        // Anthropic-compatible upstreams reject when enable_thinking is active.
+        List<LlamaCppMessage> messages = [.. ollamaReq.Messages.Select(MapMessage)];
+        if (messages.Count > 0
+            && ShouldApplyThinkingCompatibility(ollamaReq.Model)
+            && IsAssistantResponsePrefill(messages[^1]))
+        {
+            messages.RemoveAt(messages.Count - 1);
+        }
+
         var llamaReq = new LlamaCppChatRequest
         {
             Model = resolvedModel,
-            Messages = [.. ollamaReq.Messages.Select(MapMessage)],
+            Messages = messages,
             Stream = ollamaReq.Stream,
             Tools = MapTools(ollamaReq.Tools),
             ResponseFormat = ResolveResponseFormat(ollamaReq.Format),

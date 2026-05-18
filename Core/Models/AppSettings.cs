@@ -14,6 +14,7 @@ internal sealed class ModelMapping
 {
     public string OllamaName { get; set; } = string.Empty;
     public string LlamaCppName { get; set; } = string.Empty;
+    public bool EnableThinkingCompatibility { get; set; } = true;
 
     /// <summary>Upstream backend for this mapping. Only LlamaCpp is supported currently.</summary>
     public UpstreamType UpstreamType { get; set; } = UpstreamType.LlamaCpp;
@@ -103,6 +104,14 @@ internal sealed class AppSettings
     public bool StartWithDashboardOpen { get; set; } = false;
 
     /// <summary>
+    /// When true, allows more than one instance of the application to run simultaneously.
+    /// By default only a single instance is permitted; attempting to launch a second instance
+    /// will display a message and exit. Advanced users may set this to true when running
+    /// multiple proxy configurations side-by-side. Default: false.
+    /// </summary>
+    public bool AllowMultipleInstances { get; set; } = false;
+
+    /// <summary>
     /// When true, show a notification dialog the first time the main window is closed to the tray.
     /// Users can disable it from that dialog. Default: true.
     /// </summary>
@@ -176,6 +185,24 @@ internal sealed class AppSettings
         return requestedModel;
     }
 
+    /// <summary>
+    /// Finds a model mapping by either the exposed Ollama name or the mapped llama.cpp model name.
+    /// Returns null when no configured mapping matches.
+    /// </summary>
+    public ModelMapping? FindModelMapping(string requestedModel)
+    {
+        foreach (ModelMapping mapping in ModelMappings)
+        {
+            if (string.Equals(mapping.OllamaName, requestedModel, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(mapping.LlamaCppName, requestedModel, StringComparison.OrdinalIgnoreCase))
+            {
+                return mapping;
+            }
+        }
+
+        return null;
+    }
+
     private static string JsBool(bool value) => value ? "true" : "false";
 
     /// <summary>Writes the annotated default config template to disk on first run.</summary>
@@ -230,9 +257,10 @@ internal sealed class AppSettings
         sb.AppendLine("  // \u2500\u2500\u2500 Model Name Mappings \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
         sb.AppendLine("  // Each entry maps an Ollama model name to a specific upstream server and llama.cpp model.");
         sb.AppendLine("  // Each mapping MUST specify its own UpstreamUrl.");
+        sb.AppendLine("  // EnableThinkingCompatibility strips assistant response-prefill turns for models that reject them when thinking is enabled.");
         sb.AppendLine("  // UpstreamTimeoutSeconds: defaults to 300 if not specified or zero.");
         sb.AppendLine("  // Example:");
-        sb.AppendLine("  //   { \"OllamaName\": \"llama3\", \"LlamaCppName\": \"llama-3-8b\",");
+        sb.AppendLine("  //   { \"OllamaName\": \"llama3\", \"LlamaCppName\": \"llama-3-8b\", \"EnableThinkingCompatibility\": true,");
         sb.AppendLine("  //     \"UpstreamUrl\": \"http://192.168.1.10:8080\", \"UpstreamTimeoutSeconds\": 120 }");
         sb.AppendLine("  \"ModelMappings\": [],");
         sb.AppendLine();

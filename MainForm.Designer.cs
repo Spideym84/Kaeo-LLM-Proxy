@@ -89,6 +89,7 @@ partial class MainForm
         _dgvMappings = new DataGridView();
         _colOllamaName = new DataGridViewTextBoxColumn();
         _colLlamaCppName = new DataGridViewComboBoxColumn();
+        _colThinkingCompatibility = new DataGridViewCheckBoxColumn();
         _colUpstreamUrl = new DataGridViewTextBoxColumn();
         _colUpstreamTimeout = new DataGridViewTextBoxColumn();
         _colUpstreamType = new DataGridViewComboBoxColumn();
@@ -613,6 +614,7 @@ partial class MainForm
         _dgvMappings.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
         _dgvMappings.Columns.Add(_colOllamaName);
         _dgvMappings.Columns.Add(_colLlamaCppName);
+        _dgvMappings.Columns.Add(_colThinkingCompatibility);
         _dgvMappings.Columns.Add(_colUpstreamUrl);
         _dgvMappings.Columns.Add(_colUpstreamTimeout);
         _dgvMappings.Columns.Add(_colUpstreamType);
@@ -629,6 +631,12 @@ partial class MainForm
         _colLlamaCppName.HeaderText = "llama.cpp Model";
         _colLlamaCppName.Name = "_colLlamaCppName";
         _colLlamaCppName.FillWeight = 120;
+
+        _colThinkingCompatibility.HeaderText = "Thinking Fixes";
+        _colThinkingCompatibility.Name = "_colThinkingCompatibility";
+        _colThinkingCompatibility.FillWeight = 70;
+        _colThinkingCompatibility.TrueValue = true;
+        _colThinkingCompatibility.FalseValue = false;
 
         _colUpstreamUrl.HeaderText = "Upstream URL (override)";
         _colUpstreamUrl.Name = "_colUpstreamUrl";
@@ -984,6 +992,7 @@ partial class MainForm
     private DataGridView _dgvMappings;
     private DataGridViewTextBoxColumn _colOllamaName;
     private DataGridViewComboBoxColumn _colLlamaCppName;
+    private DataGridViewCheckBoxColumn _colThinkingCompatibility;
     private DataGridViewTextBoxColumn _colUpstreamUrl;
     private DataGridViewTextBoxColumn _colUpstreamTimeout;
     private DataGridViewComboBoxColumn _colUpstreamType;

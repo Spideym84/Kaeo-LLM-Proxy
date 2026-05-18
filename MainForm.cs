@@ -461,6 +461,7 @@ internal partial class MainForm : Form
             int idx = _dgvMappings.Rows.Add(
                 mapping.OllamaName,
                 string.Empty,
+                mapping.EnableThinkingCompatibility,
                 mapping.UpstreamUrl,
                 mapping.UpstreamTimeoutSeconds == 0 ? string.Empty : mapping.UpstreamTimeoutSeconds.ToString(),
                 mapping.UpstreamType.ToString());
@@ -555,9 +556,10 @@ internal partial class MainForm : Form
         {
             string? ollamaName  = row.Cells[0].Value?.ToString();
             string? llamaName   = row.Cells[1].Value?.ToString();
-            string? upstreamUrl = row.Cells[2].Value?.ToString() ?? string.Empty;
-            string? timeoutStr  = row.Cells[3].Value?.ToString();
-            string? upstreamStr = row.Cells[4].Value?.ToString();
+            bool enableThinkingCompatibility = row.Cells[2].Value as bool? ?? true;
+            string? upstreamUrl = row.Cells[3].Value?.ToString() ?? string.Empty;
+            string? timeoutStr  = row.Cells[4].Value?.ToString();
+            string? upstreamStr = row.Cells[5].Value?.ToString();
 
             if (!string.IsNullOrWhiteSpace(ollamaName) && !string.IsNullOrWhiteSpace(llamaName))
             {
@@ -581,6 +583,7 @@ internal partial class MainForm : Form
                 {
                     OllamaName             = ollamaName.Trim(),
                     LlamaCppName           = llamaName.Trim(),
+                    EnableThinkingCompatibility = enableThinkingCompatibility,
                     UpstreamUrl            = upstreamUrl.Trim(),
                     UpstreamTimeoutSeconds = timeoutSec,
                     UpstreamType           = upstream,
@@ -605,8 +608,8 @@ internal partial class MainForm : Form
     private void BtnAddMapping_Click(object? sender, EventArgs e)
     {
         // Seed the llama.cpp combo with whatever models are already loaded.
-        // Columns: [0] OllamaName, [1] LlamaCppName, [2] UpstreamUrl, [3] Timeout, [4] UpstreamType
-        int idx = _dgvMappings.Rows.Add(string.Empty, string.Empty, string.Empty, string.Empty, "LlamaCpp");
+        // Columns: [0] OllamaName, [1] LlamaCppName, [2] ThinkingCompatibility, [3] UpstreamUrl, [4] Timeout, [5] UpstreamType
+        int idx = _dgvMappings.Rows.Add(string.Empty, string.Empty, true, string.Empty, string.Empty, "LlamaCpp");
 
         // Ensure the value is valid inside the combo items.
         DataGridViewComboBoxCell modelCell =

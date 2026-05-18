@@ -20,9 +20,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly RequestLogStore _logStore;
     private MainForm? _mainForm;
 
-    public TrayApplicationContext()
+    public TrayApplicationContext() : this(AppSettings.Load()) { }
+
+    public TrayApplicationContext(AppSettings settings)
     {
-        _settings = AppSettings.Load();
+        _settings = settings;
 
         // Initialize Serilog first so all subsequent code can log.
         AppLogger.Initialize(_settings.Logging);
