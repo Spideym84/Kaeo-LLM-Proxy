@@ -462,18 +462,57 @@ internal partial class MainForm : Form
 
     private void RefreshHeartbeats()
     {
-        IReadOnlyList<HeartbeatSnapshot> snapshots = _stats.GetHeartbeatStats();
+        Dictionary<string, HeartbeatSnapshot> snapshots = _stats.GetHeartbeatStats()
+            .ToDictionary(s => s.Model, StringComparer.OrdinalIgnoreCase);
+        List<HeartbeatDisplayRow> rows = [];
+
+        foreach (ModelMapping mapping in _settings.ModelMappings)
+        {
+            string modelName = string.IsNullOrWhiteSpace(mapping.ProxyName)
+                ? mapping.ModelName
+                : mapping.ProxyName;
+
+            if (string.IsNullOrWhiteSpace(modelName))
+                continue;
+
+            snapshots.TryGetValue(mapping.ProxyName, out HeartbeatSnapshot? proxySnapshot);
+            snapshots.TryGetValue(mapping.ModelName, out HeartbeatSnapshot? modelSnapshot);
+            HeartbeatSnapshot? snapshot = (proxySnapshot?.Count ?? 0) >= (modelSnapshot?.Count ?? 0)
+                ? proxySnapshot
+                : modelSnapshot;
+
+            if (!string.IsNullOrWhiteSpace(mapping.ProxyName))
+                snapshots.Remove(mapping.ProxyName);
+            if (!string.IsNullOrWhiteSpace(mapping.ModelName))
+                snapshots.Remove(mapping.ModelName);
+
+            rows.Add(new HeartbeatDisplayRow(
+                modelName,
+                mapping.EnableHeartbeats && _settings.EnableStreamingHeartbeats,
+                snapshot?.Count ?? 0,
+                snapshot?.LastSentUtc ?? default));
+        }
+
+        rows.AddRange(snapshots.Values.Select(s => new HeartbeatDisplayRow(
+            s.Model,
+            Enabled: true,
+            s.Count,
+            s.LastSentUtc)));
 
         _lstHeartbeats.BeginUpdate();
         _lstHeartbeats.Items.Clear();
 
-        foreach (HeartbeatSnapshot snap in snapshots.OrderByDescending(s => s.LastSentUtc))
+        foreach (HeartbeatDisplayRow row in rows
+            .OrderByDescending(r => r.LastSentUtc)
+            .ThenBy(r => r.Model, StringComparer.OrdinalIgnoreCase))
         {
-            ListViewItem item = new(snap.Model);
-            item.SubItems.Add(snap.Count.ToString("N0"));
-            item.SubItems.Add(snap.LastSentUtc == default
+            ListViewItem item = new(row.Model);
+            item.SubItems.Add(row.Enabled ? "Yes" : "No");
+            item.SubItems.Add(row.Count.ToString("N0"));
+            item.SubItems.Add(row.LastSentUtc == default
                 ? "—"
-                : snap.LastSentUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"));
+                : row.LastSentUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"));
+            item.ForeColor = row.Enabled ? SystemColors.WindowText : SystemColors.GrayText;
             _lstHeartbeats.Items.Add(item);
         }
 
@@ -505,6 +544,12 @@ internal partial class MainForm : Form
         _stats.ResetHeartbeats();
         RefreshHeartbeats();
     }
+
+    private readonly record struct HeartbeatDisplayRow(
+        string Model,
+        bool Enabled,
+        long Count,
+        DateTime LastSentUtc);
 
     private void CmbRefreshInterval_SelectedIndexChanged(object? sender, EventArgs e)
     {

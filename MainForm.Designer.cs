@@ -157,6 +157,7 @@ partial class MainForm
         _lblHeartbeatStats = new Label();
         _lstHeartbeats = new ListView();
         _colHbModel = new ColumnHeader();
+        _colHbEnabled = new ColumnHeader();
         _colHbCount = new ColumnHeader();
         _colHbLast = new ColumnHeader();
         _flpHeartbeatButtons = new FlowLayoutPanel();
@@ -1109,6 +1110,7 @@ partial class MainForm
         _lblHeartbeatStats.Text = "Heartbeat activity by model:";
 
         _lstHeartbeats.Columns.Add(_colHbModel);
+        _lstHeartbeats.Columns.Add(_colHbEnabled);
         _lstHeartbeats.Columns.Add(_colHbCount);
         _lstHeartbeats.Columns.Add(_colHbLast);
         _lstHeartbeats.Dock = DockStyle.Fill;
@@ -1121,6 +1123,8 @@ partial class MainForm
 
         _colHbModel.Text = "Model";
         _colHbModel.Width = 220;
+        _colHbEnabled.Text = "Enabled";
+        _colHbEnabled.Width = 80;
         _colHbCount.Text = "Heartbeats Sent";
         _colHbCount.Width = 130;
         _colHbLast.Text = "Last Sent";
@@ -1332,6 +1336,7 @@ partial class MainForm
     private Label _lblHeartbeatStats;
     private ListView _lstHeartbeats;
     private ColumnHeader _colHbModel;
+    private ColumnHeader _colHbEnabled;
     private ColumnHeader _colHbCount;
     private ColumnHeader _colHbLast;
     private FlowLayoutPanel _flpHeartbeatButtons;
