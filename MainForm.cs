@@ -554,6 +554,8 @@ internal partial class MainForm : Form
                 EnableHeartbeats = mapping.EnableHeartbeats,
                 UpstreamUrl = mapping.UpstreamUrl,
                 UpstreamTimeoutSeconds = mapping.UpstreamTimeoutSeconds,
+                RepeatPenalty = mapping.RepeatPenalty,
+                Temperature = mapping.Temperature,
                 UpstreamType = mapping.UpstreamType,
                 EnableAutoSummarization = mapping.EnableAutoSummarization,
                 PreserveRecentMessageCount = mapping.PreserveRecentMessageCount,
@@ -697,6 +699,8 @@ internal partial class MainForm : Form
                     EnableHeartbeats       = advanced?.EnableHeartbeats ?? true,
                     UpstreamUrl            = upstreamUrl.Trim(),
                     UpstreamTimeoutSeconds = advanced?.UpstreamTimeoutSeconds ?? 300,
+                    RepeatPenalty          = advanced?.RepeatPenalty ?? 1.0,
+                    Temperature            = advanced?.Temperature ?? 0.7,
                     UpstreamType           = upstream,
                     InstructionSetName     = advanced?.InstructionSetName,
                     RedactRequestBodies    = advanced?.RedactRequestBodies ?? true,
@@ -1055,6 +1059,7 @@ internal partial class MainForm : Form
                 _cmbTestModel.Items.Add(m);
 
             _cmbTestModel.SelectedIndex = 0;
+            ApplySelectedTestModelDefaults();
             _lblTestStatus.Text = $"Loaded {allModels.Count} model(s) from {upstreamUrls.Count} upstream(s). Ready.";
         }
         catch (Exception ex)
@@ -1098,25 +1103,7 @@ internal partial class MainForm : Form
             ? discoveredUrl
             : null;
 
-        // 1) Exact match on proxy or model name.
-        ModelMapping? mapping = _settings.ModelMappings.FirstOrDefault(m =>
-            string.Equals(m.ProxyName, model, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(m.ModelName, model, StringComparison.OrdinalIgnoreCase));
-
-        // 2) Fall back to whichever mapping owns the upstream this model came from.
-        //    The test console dropdown shows raw upstream model IDs which often differ
-        //    from any configured ProxyName/ModelName, so we use the upstream URL as a
-        //    secondary key. If multiple mappings share the same upstream URL, prefer
-        //    one whose ModelName is empty (i.e. a passthrough mapping for that server),
-        //    otherwise take the first match.
-        if (mapping is null && !string.IsNullOrWhiteSpace(upstreamUrl))
-        {
-            List<ModelMapping> sameUpstream = [.. _settings.ModelMappings.Where(m =>
-                string.Equals(m.UpstreamUrl, upstreamUrl, StringComparison.OrdinalIgnoreCase))];
-
-            mapping = sameUpstream.FirstOrDefault(m => string.IsNullOrWhiteSpace(m.ModelName))
-                      ?? sameUpstream.FirstOrDefault();
-        }
+        ModelMapping? mapping = ResolveTestConsoleMapping(model, upstreamUrl);
 
         if (string.IsNullOrWhiteSpace(upstreamUrl))
             upstreamUrl = mapping?.UpstreamUrl;
@@ -1132,12 +1119,14 @@ internal partial class MainForm : Form
         messages.Add(new { role = "user", content = prompt });
 
         double temperature = (double)_nudTestTemp.Value;
+        double repeatPenalty = (double)_nudTestRepeatPenalty.Value;
 
         var payload = new
         {
             model,
             stream = true,
             temperature,
+            repeat_penalty = repeatPenalty,
             messages,
         };
         string requestBody = JsonSerializer.Serialize(payload, _indentedJsonOptions);
@@ -1219,6 +1208,65 @@ internal partial class MainForm : Form
 
         if (_btnTestSend.Enabled)
             BtnTestSend_Click(_btnTestSend, EventArgs.Empty);
+    }
+
+    private void CmbTestModel_SelectedIndexChanged(object? sender, EventArgs e)
+    {
+        ApplySelectedTestModelDefaults();
+    }
+
+    private void ApplySelectedTestModelDefaults()
+    {
+        string model = _cmbTestModel.SelectedItem?.ToString() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(model))
+            return;
+
+        string? upstreamUrl = _testModelToUpstream.TryGetValue(model, out string? discoveredUrl)
+            ? discoveredUrl
+            : null;
+
+        ModelMapping? mapping = ResolveTestConsoleMapping(model, upstreamUrl);
+        if (mapping is null)
+            return;
+
+        _nudTestTemp.Value = ClampDecimal(mapping.Temperature, _nudTestTemp.Minimum, _nudTestTemp.Maximum, _nudTestTemp.Value);
+        _nudTestRepeatPenalty.Value = ClampDecimal(
+            mapping.RepeatPenalty,
+            _nudTestRepeatPenalty.Minimum,
+            _nudTestRepeatPenalty.Maximum,
+            _nudTestRepeatPenalty.Value);
+    }
+
+    private ModelMapping? ResolveTestConsoleMapping(string model, string? upstreamUrl)
+    {
+        ModelMapping? mapping = _settings.ModelMappings.FirstOrDefault(m =>
+            string.Equals(m.ProxyName, model, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(m.ModelName, model, StringComparison.OrdinalIgnoreCase));
+
+        if (mapping is null && !string.IsNullOrWhiteSpace(upstreamUrl))
+        {
+            List<ModelMapping> sameUpstream = [.. _settings.ModelMappings.Where(m =>
+                string.Equals(m.UpstreamUrl, upstreamUrl, StringComparison.OrdinalIgnoreCase))];
+
+            mapping = sameUpstream.FirstOrDefault(m => string.IsNullOrWhiteSpace(m.ModelName))
+                      ?? sameUpstream.FirstOrDefault();
+        }
+
+        return mapping;
+    }
+
+    private static decimal ClampDecimal(double value, decimal min, decimal max, decimal fallback)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+            return fallback;
+
+        decimal decimalValue = (decimal)value;
+        if (decimalValue < min)
+            return min;
+        if (decimalValue > max)
+            return max;
+
+        return decimalValue;
     }
 
     private void AppendTestConsoleToken(

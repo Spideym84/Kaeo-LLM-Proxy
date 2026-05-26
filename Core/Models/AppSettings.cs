@@ -56,6 +56,16 @@ internal sealed class ModelMapping
     public int UpstreamTimeoutSeconds { get; set; } = 300;
 
     /// <summary>
+    /// Repeat penalty to send to compatible upstreams. 1.0 is neutral/no penalty.
+    /// </summary>
+    public double RepeatPenalty { get; set; } = 1.0;
+
+    /// <summary>
+    /// Default temperature to use for this model in the Test Console. Upstream proxy requests keep their client-supplied value.
+    /// </summary>
+    public double Temperature { get; set; } = 0.7;
+
+    /// <summary>
     /// Enable automatic context summarization when the model's context window is exceeded.
     /// When enabled, the proxy will automatically summarize older conversation history
     /// and retry the request with condensed context. Default: true.

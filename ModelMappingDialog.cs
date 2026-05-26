@@ -34,6 +34,10 @@ internal sealed class ModelMappingDialog : Form
     private readonly ComboBox _cmbInstructionSet = new();
     private readonly Label _lblUpstreamTimeout = new();
     private readonly TextBox _txtUpstreamTimeout = new();
+    private readonly Label _lblTemperature = new();
+    private readonly NumericUpDown _nudTemperature = new();
+    private readonly Label _lblRepeatPenalty = new();
+    private readonly NumericUpDown _nudRepeatPenalty = new();
     private readonly CheckBox _chkEnableThinkingCompatibility = new();
     private readonly CheckBox _chkEnableHeartbeats = new();
     private readonly CheckBox _chkRedactRequestBodies = new();
@@ -111,6 +115,34 @@ internal sealed class ModelMappingDialog : Form
         set => _txtUpstreamTimeout.Text = value <= 0 ? "300" : value.ToString();
     }
 
+    private static decimal ClampDecimal(double value, decimal min, decimal max, decimal fallback)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+            return fallback;
+
+        decimal decimalValue = (decimal)value;
+        if (decimalValue < min)
+            return min;
+        if (decimalValue > max)
+            return max;
+
+        return decimalValue;
+    }
+
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    private double Temperature
+    {
+        get => (double)_nudTemperature.Value;
+        set => _nudTemperature.Value = ClampDecimal(value, _nudTemperature.Minimum, _nudTemperature.Maximum, 0.7M);
+    }
+
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    private double RepeatPenalty
+    {
+        get => (double)_nudRepeatPenalty.Value;
+        set => _nudRepeatPenalty.Value = ClampDecimal(value, _nudRepeatPenalty.Minimum, _nudRepeatPenalty.Maximum, 1.0M);
+    }
+
     private void PopulateInstructionSets(IEnumerable<InstructionSet> instructionSets)
     {
         _cmbInstructionSet.Items.Clear();
@@ -148,7 +180,9 @@ internal sealed class ModelMappingDialog : Form
         _tlpMain.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         _tlpMain.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         _tlpMain.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        _tlpMain.RowCount = 12;
+        _tlpMain.RowCount = 14;
+        _tlpMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _tlpMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _tlpMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _tlpMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _tlpMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -188,18 +222,26 @@ internal sealed class ModelMappingDialog : Form
         _tlpMain.SetColumnSpan(_txtUpstreamTimeout, 2);
         _tlpMain.Controls.Add(_txtUpstreamTimeout, 1, 5);
 
+        _tlpMain.Controls.Add(_lblTemperature, 0, 6);
+        _tlpMain.SetColumnSpan(_nudTemperature, 2);
+        _tlpMain.Controls.Add(_nudTemperature, 1, 6);
+
+        _tlpMain.Controls.Add(_lblRepeatPenalty, 0, 7);
+        _tlpMain.SetColumnSpan(_nudRepeatPenalty, 2);
+        _tlpMain.Controls.Add(_nudRepeatPenalty, 1, 7);
+
         _tlpMain.SetColumnSpan(_chkEnableThinkingCompatibility, 3);
-        _tlpMain.Controls.Add(_chkEnableThinkingCompatibility, 0, 6);
+        _tlpMain.Controls.Add(_chkEnableThinkingCompatibility, 0, 8);
         _tlpMain.SetColumnSpan(_chkEnableHeartbeats, 3);
-        _tlpMain.Controls.Add(_chkEnableHeartbeats, 0, 7);
+        _tlpMain.Controls.Add(_chkEnableHeartbeats, 0, 9);
         _tlpMain.SetColumnSpan(_chkRedactRequestBodies, 3);
-        _tlpMain.Controls.Add(_chkRedactRequestBodies, 0, 8);
+        _tlpMain.Controls.Add(_chkRedactRequestBodies, 0, 10);
         _tlpMain.SetColumnSpan(_chkRedactResponseBodies, 3);
-        _tlpMain.Controls.Add(_chkRedactResponseBodies, 0, 9);
+        _tlpMain.Controls.Add(_chkRedactResponseBodies, 0, 11);
         _tlpMain.SetColumnSpan(_chkRedactSensitiveJsonFields, 3);
-        _tlpMain.Controls.Add(_chkRedactSensitiveJsonFields, 0, 10);
+        _tlpMain.Controls.Add(_chkRedactSensitiveJsonFields, 0, 12);
         _tlpMain.SetColumnSpan(_flpButtons, 3);
-        _tlpMain.Controls.Add(_flpButtons, 0, 11);
+        _tlpMain.Controls.Add(_flpButtons, 0, 13);
 
         _lblProxyName.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         _lblProxyName.AutoSize = true;
@@ -258,6 +300,34 @@ internal sealed class ModelMappingDialog : Form
         _txtUpstreamTimeout.Dock = DockStyle.Fill;
         _txtUpstreamTimeout.Margin = new Padding(0, 4, 0, 4);
 
+        _lblTemperature.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblTemperature.AutoSize = true;
+        _lblTemperature.Margin = new Padding(0, 8, 8, 4);
+        _lblTemperature.Text = "Temperature:";
+
+        _nudTemperature.DecimalPlaces = 2;
+        _nudTemperature.Dock = DockStyle.Left;
+        _nudTemperature.Increment = 0.05M;
+        _nudTemperature.Margin = new Padding(0, 4, 0, 4);
+        _nudTemperature.Maximum = 2.0M;
+        _nudTemperature.Minimum = 0.0M;
+        _nudTemperature.Size = new Size(90, 25);
+        _nudTemperature.Value = 0.7M;
+
+        _lblRepeatPenalty.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblRepeatPenalty.AutoSize = true;
+        _lblRepeatPenalty.Margin = new Padding(0, 8, 8, 4);
+        _lblRepeatPenalty.Text = "Repeat Penalty:";
+
+        _nudRepeatPenalty.DecimalPlaces = 2;
+        _nudRepeatPenalty.Dock = DockStyle.Left;
+        _nudRepeatPenalty.Increment = 0.05M;
+        _nudRepeatPenalty.Margin = new Padding(0, 4, 0, 4);
+        _nudRepeatPenalty.Maximum = 2.0M;
+        _nudRepeatPenalty.Minimum = 0.5M;
+        _nudRepeatPenalty.Size = new Size(90, 25);
+        _nudRepeatPenalty.Value = 1.0M;
+
         _chkEnableThinkingCompatibility.AutoSize = true;
         _chkEnableThinkingCompatibility.Margin = new Padding(0, 8, 0, 2);
         _chkEnableThinkingCompatibility.Text = "Enable thinking compatibility (strip assistant response-prefill turns)";
@@ -301,7 +371,7 @@ internal sealed class ModelMappingDialog : Form
         AutoScaleDimensions = new SizeF(7F, 15F);
         AutoScaleMode = AutoScaleMode.Font;
         CancelButton = _btnCancel;
-        ClientSize = new Size(560, 440);
+        ClientSize = new Size(560, 500);
         Controls.Add(_tlpMain);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -428,6 +498,8 @@ internal sealed class ModelMappingDialog : Form
         dlg.EnableThinkingCompatibility = mapping.EnableThinkingCompatibility;
         dlg.EnableHeartbeats = mapping.EnableHeartbeats;
         dlg.UpstreamTimeoutSeconds = mapping.UpstreamTimeoutSeconds;
+        dlg.Temperature = mapping.Temperature;
+        dlg.RepeatPenalty = mapping.RepeatPenalty;
         dlg.RedactRequestBodies = mapping.RedactRequestBodies;
         dlg.RedactResponseBodies = mapping.RedactResponseBodies;
         dlg.RedactSensitiveJsonFields = mapping.RedactSensitiveJsonFields;
@@ -449,6 +521,8 @@ internal sealed class ModelMappingDialog : Form
         mapping.EnableThinkingCompatibility = dlg.EnableThinkingCompatibility;
         mapping.EnableHeartbeats = dlg.EnableHeartbeats;
         mapping.UpstreamTimeoutSeconds = dlg.UpstreamTimeoutSeconds;
+        mapping.Temperature = dlg.Temperature;
+        mapping.RepeatPenalty = dlg.RepeatPenalty;
         mapping.RedactRequestBodies = dlg.RedactRequestBodies;
         mapping.RedactResponseBodies = dlg.RedactResponseBodies;
         mapping.RedactSensitiveJsonFields = dlg.RedactSensitiveJsonFields;

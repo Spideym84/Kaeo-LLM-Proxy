@@ -140,6 +140,8 @@ partial class MainForm
         _cmbTestModel = new ComboBox();
         _lblTestTemp = new Label();
         _nudTestTemp = new NumericUpDown();
+        _lblTestRepeatPenalty = new Label();
+        _nudTestRepeatPenalty = new NumericUpDown();
         _btnTestSend = new Button();
         _btnTestCancel = new Button();
         _btnTestClear = new Button();
@@ -180,6 +182,7 @@ partial class MainForm
         _tlpHeartbeats.SuspendLayout();
         _flpHeartbeatButtons.SuspendLayout();
         ((System.ComponentModel.ISupportInitialize)_nudTestTemp).BeginInit();
+        ((System.ComponentModel.ISupportInitialize)_nudTestRepeatPenalty).BeginInit();
         _grpStatus.SuspendLayout();
         _pnlStatus.SuspendLayout();
         _flpStatusButtons.SuspendLayout();
@@ -942,12 +945,14 @@ partial class MainForm
         _tlpTestOuter.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         _tlpTestOuter.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-        // _tlpTestTop — model label | combo | temp label | nud | Send | Cancel | Clear
+        // _tlpTestTop — model label | combo | temp label | nud | repeat penalty label | nud | Send | Cancel | Clear
         _tlpTestTop.AutoSize = true;
         _tlpTestTop.AutoSizeMode = AutoSizeMode.GrowOnly;
-        _tlpTestTop.ColumnCount = 7;
+        _tlpTestTop.ColumnCount = 9;
         _tlpTestTop.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         _tlpTestTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        _tlpTestTop.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _tlpTestTop.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         _tlpTestTop.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         _tlpTestTop.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         _tlpTestTop.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -957,9 +962,11 @@ partial class MainForm
         _tlpTestTop.Controls.Add(_cmbTestModel, 1, 0);
         _tlpTestTop.Controls.Add(_lblTestTemp, 2, 0);
         _tlpTestTop.Controls.Add(_nudTestTemp, 3, 0);
-        _tlpTestTop.Controls.Add(_btnTestSend, 4, 0);
-        _tlpTestTop.Controls.Add(_btnTestCancel, 5, 0);
-        _tlpTestTop.Controls.Add(_btnTestClear, 6, 0);
+        _tlpTestTop.Controls.Add(_lblTestRepeatPenalty, 4, 0);
+        _tlpTestTop.Controls.Add(_nudTestRepeatPenalty, 5, 0);
+        _tlpTestTop.Controls.Add(_btnTestSend, 6, 0);
+        _tlpTestTop.Controls.Add(_btnTestCancel, 7, 0);
+        _tlpTestTop.Controls.Add(_btnTestClear, 8, 0);
         _tlpTestTop.Dock = DockStyle.Fill;
         _tlpTestTop.Margin = new Padding(0, 0, 0, 6);
         _tlpTestTop.Name = "_tlpTestTop";
@@ -975,6 +982,7 @@ partial class MainForm
         _cmbTestModel.DropDownStyle = ComboBoxStyle.DropDownList;
         _cmbTestModel.Margin = new Padding(0, 2, 8, 2);
         _cmbTestModel.Name = "_cmbTestModel";
+        _cmbTestModel.SelectedIndexChanged += CmbTestModel_SelectedIndexChanged;
 
         _lblTestTemp.Anchor = AnchorStyles.Left;
         _lblTestTemp.AutoSize = true;
@@ -990,6 +998,21 @@ partial class MainForm
         _nudTestTemp.Name = "_nudTestTemp";
         _nudTestTemp.Size = new Size(64, 25);
         _nudTestTemp.Value = new decimal(new int[] { 70, 0, 0, 131072 });
+
+        _lblTestRepeatPenalty.Anchor = AnchorStyles.Left;
+        _lblTestRepeatPenalty.AutoSize = true;
+        _lblTestRepeatPenalty.Margin = new Padding(0, 0, 4, 0);
+        _lblTestRepeatPenalty.Name = "_lblTestRepeatPenalty";
+        _lblTestRepeatPenalty.Text = "Penalty:";
+
+        _nudTestRepeatPenalty.DecimalPlaces = 2;
+        _nudTestRepeatPenalty.Increment = new decimal(new int[] { 5, 0, 0, 131072 });
+        _nudTestRepeatPenalty.Maximum = new decimal(new int[] { 2, 0, 0, 0 });
+        _nudTestRepeatPenalty.Minimum = new decimal(new int[] { 5, 0, 0, 65536 });
+        _nudTestRepeatPenalty.Margin = new Padding(0, 2, 8, 2);
+        _nudTestRepeatPenalty.Name = "_nudTestRepeatPenalty";
+        _nudTestRepeatPenalty.Size = new Size(64, 25);
+        _nudTestRepeatPenalty.Value = new decimal(new int[] { 1, 0, 0, 0 });
 
         _btnTestSend.Margin = new Padding(0, 2, 4, 2);
         _btnTestSend.Name = "_btnTestSend";
@@ -1177,6 +1200,7 @@ partial class MainForm
         _flpHeartbeatButtons.ResumeLayout(false);
         _flpHeartbeatButtons.PerformLayout();
         ((System.ComponentModel.ISupportInitialize)_nudTestTemp).EndInit();
+        ((System.ComponentModel.ISupportInitialize)_nudTestRepeatPenalty).EndInit();
         ((System.ComponentModel.ISupportInitialize)_dgvMappings).EndInit();
         ResumeLayout(false);
     }
@@ -1293,6 +1317,8 @@ partial class MainForm
     private ComboBox _cmbTestModel;
     private Label _lblTestTemp;
     private NumericUpDown _nudTestTemp;
+    private Label _lblTestRepeatPenalty;
+    private NumericUpDown _nudTestRepeatPenalty;
     private Button _btnTestSend;
     private Button _btnTestCancel;
     private Button _btnTestClear;
