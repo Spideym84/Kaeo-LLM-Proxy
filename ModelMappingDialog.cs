@@ -30,6 +30,9 @@ internal sealed class ModelMappingDialog : Form
     private readonly Button _btnFetchModels = new();
     private readonly Label _lblInstructionSet = new();
     private readonly ComboBox _cmbInstructionSet = new();
+    private readonly Label _lblUpstreamTimeout = new();
+    private readonly TextBox _txtUpstreamTimeout = new();
+    private readonly CheckBox _chkEnableThinkingCompatibility = new();
     private readonly CheckBox _chkRedactRequestBodies = new();
     private readonly CheckBox _chkRedactResponseBodies = new();
     private readonly CheckBox _chkRedactSensitiveJsonFields = new();
@@ -83,6 +86,20 @@ internal sealed class ModelMappingDialog : Form
         set => _chkRedactSensitiveJsonFields.Checked = value;
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    private bool EnableThinkingCompatibility
+    {
+        get => _chkEnableThinkingCompatibility.Checked;
+        set => _chkEnableThinkingCompatibility.Checked = value;
+    }
+
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    private int UpstreamTimeoutSeconds
+    {
+        get => int.TryParse(_txtUpstreamTimeout.Text, out int v) && v > 0 ? v : 300;
+        set => _txtUpstreamTimeout.Text = value <= 0 ? "300" : value.ToString();
+    }
+
     private void PopulateInstructionSets(IEnumerable<InstructionSet> instructionSets)
     {
         _cmbInstructionSet.Items.Clear();
@@ -120,7 +137,9 @@ internal sealed class ModelMappingDialog : Form
         _tlpMain.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         _tlpMain.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         _tlpMain.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        _tlpMain.RowCount = 8;
+        _tlpMain.RowCount = 10;
+        _tlpMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _tlpMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _tlpMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _tlpMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _tlpMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -148,14 +167,20 @@ internal sealed class ModelMappingDialog : Form
         _tlpMain.SetColumnSpan(_cmbInstructionSet, 2);
         _tlpMain.Controls.Add(_cmbInstructionSet, 1, 3);
 
+        _tlpMain.Controls.Add(_lblUpstreamTimeout, 0, 4);
+        _tlpMain.SetColumnSpan(_txtUpstreamTimeout, 2);
+        _tlpMain.Controls.Add(_txtUpstreamTimeout, 1, 4);
+
+        _tlpMain.SetColumnSpan(_chkEnableThinkingCompatibility, 3);
+        _tlpMain.Controls.Add(_chkEnableThinkingCompatibility, 0, 5);
         _tlpMain.SetColumnSpan(_chkRedactRequestBodies, 3);
-        _tlpMain.Controls.Add(_chkRedactRequestBodies, 0, 4);
+        _tlpMain.Controls.Add(_chkRedactRequestBodies, 0, 6);
         _tlpMain.SetColumnSpan(_chkRedactResponseBodies, 3);
-        _tlpMain.Controls.Add(_chkRedactResponseBodies, 0, 5);
+        _tlpMain.Controls.Add(_chkRedactResponseBodies, 0, 7);
         _tlpMain.SetColumnSpan(_chkRedactSensitiveJsonFields, 3);
-        _tlpMain.Controls.Add(_chkRedactSensitiveJsonFields, 0, 6);
+        _tlpMain.Controls.Add(_chkRedactSensitiveJsonFields, 0, 8);
         _tlpMain.SetColumnSpan(_flpButtons, 3);
-        _tlpMain.Controls.Add(_flpButtons, 0, 7);
+        _tlpMain.Controls.Add(_flpButtons, 0, 9);
 
         _lblProxyName.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         _lblProxyName.AutoSize = true;
@@ -200,6 +225,18 @@ internal sealed class ModelMappingDialog : Form
         _cmbInstructionSet.DropDownStyle = ComboBoxStyle.DropDownList;
         _cmbInstructionSet.Margin = new Padding(0, 4, 0, 4);
 
+        _lblUpstreamTimeout.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblUpstreamTimeout.AutoSize = true;
+        _lblUpstreamTimeout.Margin = new Padding(0, 8, 8, 4);
+        _lblUpstreamTimeout.Text = "Upstream Timeout (s):";
+
+        _txtUpstreamTimeout.Dock = DockStyle.Fill;
+        _txtUpstreamTimeout.Margin = new Padding(0, 4, 0, 4);
+
+        _chkEnableThinkingCompatibility.AutoSize = true;
+        _chkEnableThinkingCompatibility.Margin = new Padding(0, 8, 0, 2);
+        _chkEnableThinkingCompatibility.Text = "Enable thinking compatibility (strip assistant response-prefill turns)";
+
         _chkRedactRequestBodies.AutoSize = true;
         _chkRedactRequestBodies.Margin = new Padding(0, 8, 0, 2);
         _chkRedactRequestBodies.Text = "Redact captured request bodies";
@@ -234,7 +271,7 @@ internal sealed class ModelMappingDialog : Form
         AutoScaleDimensions = new SizeF(7F, 15F);
         AutoScaleMode = AutoScaleMode.Font;
         CancelButton = _btnCancel;
-        ClientSize = new Size(560, 320);
+        ClientSize = new Size(560, 380);
         Controls.Add(_tlpMain);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -361,6 +398,8 @@ internal sealed class ModelMappingDialog : Form
             : dlg._upstreamUrl;
         dlg.PopulateModelItems(existingModelItems, mapping.ModelName);
         dlg.InstructionSetName = mapping.InstructionSetName;
+        dlg.EnableThinkingCompatibility = mapping.EnableThinkingCompatibility;
+        dlg.UpstreamTimeoutSeconds = mapping.UpstreamTimeoutSeconds;
         dlg.RedactRequestBodies = mapping.RedactRequestBodies;
         dlg.RedactResponseBodies = mapping.RedactResponseBodies;
         dlg.RedactSensitiveJsonFields = mapping.RedactSensitiveJsonFields;
@@ -374,6 +413,8 @@ internal sealed class ModelMappingDialog : Form
 
         mapping.ModelName = (dlg._cmbModelName.SelectedItem?.ToString() ?? dlg._cmbModelName.Text ?? string.Empty).Trim();
         mapping.InstructionSetName = dlg.InstructionSetName;
+        mapping.EnableThinkingCompatibility = dlg.EnableThinkingCompatibility;
+        mapping.UpstreamTimeoutSeconds = dlg.UpstreamTimeoutSeconds;
         mapping.RedactRequestBodies = dlg.RedactRequestBodies;
         mapping.RedactResponseBodies = dlg.RedactResponseBodies;
         mapping.RedactSensitiveJsonFields = dlg.RedactSensitiveJsonFields;

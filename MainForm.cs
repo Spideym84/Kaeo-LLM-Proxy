@@ -477,9 +477,7 @@ internal partial class MainForm : Form
             int idx = _dgvMappings.Rows.Add(
                 mapping.ProxyName,
                 string.Empty,
-                mapping.EnableThinkingCompatibility,
                 mapping.UpstreamUrl,
-                mapping.UpstreamTimeoutSeconds == 0 ? string.Empty : mapping.UpstreamTimeoutSeconds.ToString(),
                 mapping.UpstreamType.ToString());
 
             DataGridViewRow row = _dgvMappings.Rows[idx];
@@ -608,9 +606,7 @@ internal partial class MainForm : Form
         {
             string? proxyName  = row.Cells[_colProxyName.Name].Value?.ToString();
             string? modelName  = row.Cells[_colModelName.Name].Value?.ToString();
-            bool enableThinkingCompatibility = row.Cells[_colThinkingCompatibility.Name].Value as bool? ?? true;
             string? upstreamUrl = row.Cells[_colUpstreamUrl.Name].Value?.ToString() ?? string.Empty;
-            string? timeoutStr  = row.Cells[_colUpstreamTimeout.Name].Value?.ToString();
             string? upstreamStr = row.Cells[_colUpstreamType.Name].Value?.ToString();
 
             // Advanced per-model settings live on the row Tag and are edited via the Configure dialog.
@@ -641,16 +637,13 @@ internal partial class MainForm : Form
                     ? parsed
                     : UpstreamType.LlamaCpp;
 
-                if (!int.TryParse(timeoutStr, out int timeoutSec))
-                    timeoutSec = 300;  // Default timeout
-
                 _settings.ModelMappings.Add(new ModelMapping
                 {
                     ProxyName              = trimmedProxy,
                     ModelName              = modelName.Trim(),
-                    EnableThinkingCompatibility = enableThinkingCompatibility,
+                    EnableThinkingCompatibility = advanced?.EnableThinkingCompatibility ?? true,
                     UpstreamUrl            = upstreamUrl.Trim(),
-                    UpstreamTimeoutSeconds = timeoutSec,
+                    UpstreamTimeoutSeconds = advanced?.UpstreamTimeoutSeconds ?? 300,
                     UpstreamType           = upstream,
                     InstructionSetName     = advanced?.InstructionSetName,
                     RedactRequestBodies    = advanced?.RedactRequestBodies ?? true,
@@ -677,9 +670,9 @@ internal partial class MainForm : Form
     private void BtnAddMapping_Click(object? sender, EventArgs e)
     {
         // Seed the model combo with whatever models are already loaded.
-        // Columns: [0] ProxyName, [1] ModelName, [2] ThinkingCompatibility, [3] UpstreamUrl, [4] Timeout, [5] UpstreamType
-        // Advanced settings (instruction set, redaction) live on row.Tag and are edited via the Configure dialog.
-        int idx = _dgvMappings.Rows.Add(string.Empty, string.Empty, true, string.Empty, string.Empty, "LlamaCpp");
+        // Columns: [0] ProxyName, [1] ModelName, [2] UpstreamUrl, [3] UpstreamType
+        // Advanced settings (thinking, timeout, instructions, redaction) live on row.Tag and are edited via the Configure dialog.
+        int idx = _dgvMappings.Rows.Add(string.Empty, string.Empty, string.Empty, "LlamaCpp");
 
         DataGridViewRow row = _dgvMappings.Rows[idx];
         row.Tag = new ModelMapping();

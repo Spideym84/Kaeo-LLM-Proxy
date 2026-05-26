@@ -91,11 +91,10 @@ partial class MainForm
         _dgvMappings = new DataGridView();
         _colProxyName = new DataGridViewTextBoxColumn();
         _colModelName = new DataGridViewComboBoxColumn();
-        _colThinkingCompatibility = new DataGridViewCheckBoxColumn();
         _colUpstreamUrl = new DataGridViewTextBoxColumn();
-        _colUpstreamTimeout = new DataGridViewTextBoxColumn();
         _colUpstreamType = new DataGridViewComboBoxColumn();
         _btnSaveSettings = new Button();
+        _flpMappingButtons = new FlowLayoutPanel();
         _btnAddMapping = new Button();
         _btnRemoveMapping = new Button();
         _btnConfigureMapping = new Button();
@@ -560,7 +559,7 @@ partial class MainForm
         _tlpSettings.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         _tlpSettings.Location = new Point(8, 8);
         _tlpSettings.Name = "_tlpSettings";
-        _tlpSettings.RowCount = 13;
+        _tlpSettings.RowCount = 12;
         _tlpSettings.Size = new Size(660, 460);
 
         _tlpSettings.Controls.Add(_lblListenPort, 0, 0);
@@ -583,13 +582,10 @@ partial class MainForm
         _tlpSettings.Controls.Add(_lblMappings, 0, 8);
         _tlpSettings.SetColumnSpan(_dgvMappings, 2);
         _tlpSettings.Controls.Add(_dgvMappings, 0, 9);
-        _tlpSettings.SetColumnSpan(_btnAddMapping, 1);
-        _tlpSettings.Controls.Add(_btnAddMapping, 0, 10);
-        _tlpSettings.Controls.Add(_btnRemoveMapping, 1, 10);
-        _tlpSettings.SetColumnSpan(_btnConfigureMapping, 2);
-        _tlpSettings.Controls.Add(_btnConfigureMapping, 0, 11);
+        _tlpSettings.SetColumnSpan(_flpMappingButtons, 2);
+        _tlpSettings.Controls.Add(_flpMappingButtons, 0, 10);
         _tlpSettings.SetColumnSpan(_btnSaveSettings, 2);
-        _tlpSettings.Controls.Add(_btnSaveSettings, 0, 12);
+        _tlpSettings.Controls.Add(_btnSaveSettings, 0, 11);
 
         _lblListenPort.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         _lblListenPort.AutoSize = true;
@@ -656,9 +652,7 @@ partial class MainForm
         _dgvMappings.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
         _dgvMappings.Columns.Add(_colProxyName);
         _dgvMappings.Columns.Add(_colModelName);
-        _dgvMappings.Columns.Add(_colThinkingCompatibility);
         _dgvMappings.Columns.Add(_colUpstreamUrl);
-        _dgvMappings.Columns.Add(_colUpstreamTimeout);
         _dgvMappings.Columns.Add(_colUpstreamType);
         _dgvMappings.Dock = DockStyle.Fill;
         _dgvMappings.Margin = new Padding(4, 4, 4, 4);
@@ -675,22 +669,10 @@ partial class MainForm
         _colModelName.Name = "_colModelName";
         _colModelName.FillWeight = 120;
 
-        _colThinkingCompatibility.HeaderText = "Thinking Fixes";
-        _colThinkingCompatibility.Name = "_colThinkingCompatibility";
-        _colThinkingCompatibility.FillWeight = 70;
-        _colThinkingCompatibility.TrueValue = true;
-        _colThinkingCompatibility.FalseValue = false;
-
         _colUpstreamUrl.HeaderText = "Upstream URL (override)";
         _colUpstreamUrl.Name = "_colUpstreamUrl";
         _colUpstreamUrl.FillWeight = 160;
         _colUpstreamUrl.DefaultCellStyle.NullValue = string.Empty;
-
-        _colUpstreamTimeout.HeaderText = "Timeout (s)";
-        _colUpstreamTimeout.Name = "_colUpstreamTimeout";
-        _colUpstreamTimeout.Width = 80;
-        _colUpstreamTimeout.FillWeight = 50;
-        _colUpstreamTimeout.DefaultCellStyle.NullValue = "0";
 
         _colUpstreamType.FlatStyle = FlatStyle.Flat;
         _colUpstreamType.HeaderText = "Upstream";
@@ -699,29 +681,38 @@ partial class MainForm
         _colUpstreamType.Width = 110;
         _colUpstreamType.FillWeight = 60;
 
+        _flpMappingButtons.AutoSize = true;
+        _flpMappingButtons.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        _flpMappingButtons.Controls.Add(_btnAddMapping);
+        _flpMappingButtons.Controls.Add(_btnRemoveMapping);
+        _flpMappingButtons.Controls.Add(_btnConfigureMapping);
+        _flpMappingButtons.Dock = DockStyle.Fill;
+        _flpMappingButtons.FlowDirection = FlowDirection.LeftToRight;
+        _flpMappingButtons.Margin = new Padding(0, 4, 0, 4);
+        _flpMappingButtons.Name = "_flpMappingButtons";
+        _flpMappingButtons.WrapContents = false;
+
         _btnAddMapping.AutoSize = true;
-        _btnAddMapping.Margin = new Padding(4, 8, 4, 4);
+        _btnAddMapping.Margin = new Padding(4, 4, 4, 4);
         _btnAddMapping.Name = "_btnAddMapping";
         _btnAddMapping.Text = "Add Mapping";
         _btnAddMapping.Click += BtnAddMapping_Click;
 
-        _btnRemoveMapping.Anchor = AnchorStyles.Left;
         _btnRemoveMapping.AutoSize = true;
-        _btnRemoveMapping.Margin = new Padding(4, 8, 4, 4);
+        _btnRemoveMapping.Margin = new Padding(4, 4, 4, 4);
         _btnRemoveMapping.Name = "_btnRemoveMapping";
-        _btnRemoveMapping.Text = "Remove Selected";
+        _btnRemoveMapping.Text = "Remove Mapping";
         _btnRemoveMapping.Click += BtnRemoveMapping_Click;
 
         _btnConfigureMapping.AutoSize = true;
-        _btnConfigureMapping.Anchor = AnchorStyles.Left;
-        _btnConfigureMapping.Margin = new Padding(4, 8, 4, 4);
+        _btnConfigureMapping.Margin = new Padding(4, 4, 4, 4);
         _btnConfigureMapping.Name = "_btnConfigureMapping";
         _btnConfigureMapping.Text = "Configure Selected…";
         _btnConfigureMapping.Click += BtnConfigureMapping_Click;
 
         _btnSaveSettings.Anchor = AnchorStyles.Right;
         _btnSaveSettings.AutoSize = true;
-        _btnSaveSettings.Margin = new Padding(4, 12, 4, 4);
+        _btnSaveSettings.Margin = new Padding(4, 8, 4, 4);
         _btnSaveSettings.Name = "_btnSaveSettings";
         _btnSaveSettings.Text = "Save Settings";
         _btnSaveSettings.Click += BtnSaveSettings_Click;
@@ -1126,10 +1117,9 @@ partial class MainForm
     private DataGridView _dgvMappings;
     private DataGridViewTextBoxColumn _colProxyName;
     private DataGridViewComboBoxColumn _colModelName;
-    private DataGridViewCheckBoxColumn _colThinkingCompatibility;
     private DataGridViewTextBoxColumn _colUpstreamUrl;
-    private DataGridViewTextBoxColumn _colUpstreamTimeout;
     private DataGridViewComboBoxColumn _colUpstreamType;
+    private FlowLayoutPanel _flpMappingButtons;
     private Button _btnAddMapping;
     private Button _btnRemoveMapping;
     private Button _btnConfigureMapping;
