@@ -505,7 +505,7 @@ internal partial class MainForm : Form
 
             // The combo cell needs the item to exist before we can set a value.
             DataGridViewComboBoxCell cell =
-                (DataGridViewComboBoxCell)row.Cells[1];
+                (DataGridViewComboBoxCell)row.Cells[_colLlamaCppName.Name];
 
             if (!cell.Items.Contains(mapping.LlamaCppName))
                 cell.Items.Add(mapping.LlamaCppName);
@@ -606,12 +606,12 @@ internal partial class MainForm : Form
         HashSet<string> seenOllamaNames = new(StringComparer.OrdinalIgnoreCase);
         foreach (DataGridViewRow row in _dgvMappings.Rows)
         {
-            string? ollamaName  = row.Cells[0].Value?.ToString();
-            string? llamaName   = row.Cells[1].Value?.ToString();
-            bool enableThinkingCompatibility = row.Cells[2].Value as bool? ?? true;
-            string? upstreamUrl = row.Cells[3].Value?.ToString() ?? string.Empty;
-            string? timeoutStr  = row.Cells[4].Value?.ToString();
-            string? upstreamStr = row.Cells[5].Value?.ToString();
+            string? ollamaName  = row.Cells[_colOllamaName.Name].Value?.ToString();
+            string? llamaName   = row.Cells[_colLlamaCppName.Name].Value?.ToString();
+            bool enableThinkingCompatibility = row.Cells[_colThinkingCompatibility.Name].Value as bool? ?? true;
+            string? upstreamUrl = row.Cells[_colUpstreamUrl.Name].Value?.ToString() ?? string.Empty;
+            string? timeoutStr  = row.Cells[_colUpstreamTimeout.Name].Value?.ToString();
+            string? upstreamStr = row.Cells[_colUpstreamType.Name].Value?.ToString();
 
             // Advanced per-model settings live on the row Tag and are edited via the Configure dialog.
             ModelMapping? advanced = row.Tag as ModelMapping;
@@ -686,12 +686,12 @@ internal partial class MainForm : Form
 
         // Ensure the value is valid inside the combo items.
         DataGridViewComboBoxCell modelCell =
-            (DataGridViewComboBoxCell)row.Cells[1];
+            (DataGridViewComboBoxCell)row.Cells[_colLlamaCppName.Name];
 
         if (modelCell.Items.Count > 0 && modelCell.Value is null)
             modelCell.Value = modelCell.Items[0];
 
-        _dgvMappings.CurrentCell = row.Cells[0];
+        _dgvMappings.CurrentCell = row.Cells[_colOllamaName.Name];
         _dgvMappings.BeginEdit(true);
     }
 
@@ -730,7 +730,7 @@ internal partial class MainForm : Form
         }
 
         // Reflect the current Ollama name in the dialog header.
-        mapping.OllamaName = row.Cells[0].Value?.ToString() ?? string.Empty;
+        mapping.OllamaName = row.Cells[_colOllamaName.Name].Value?.ToString() ?? string.Empty;
 
         if (ModelMappingDialog.ShowConfigureDialog(this, mapping, _settings.InstructionSets))
         {
@@ -828,7 +828,7 @@ internal partial class MainForm : Form
 
             foreach (DataGridViewRow row in rowsToFetch)
             {
-                string? upstreamUrl = row.Cells[2].Value?.ToString();
+                string? upstreamUrl = row.Cells[_colUpstreamUrl.Name].Value?.ToString();
 
                 if (string.IsNullOrWhiteSpace(upstreamUrl))
                 {
@@ -845,7 +845,7 @@ internal partial class MainForm : Form
                 }
 
                 // Update this row's llama.cpp combo cell
-                DataGridViewComboBoxCell cell = (DataGridViewComboBoxCell)row.Cells[1];
+                DataGridViewComboBoxCell cell = (DataGridViewComboBoxCell)row.Cells[_colLlamaCppName.Name];
                 string? current = cell.Value?.ToString();
 
                 cell.Items.Clear();
