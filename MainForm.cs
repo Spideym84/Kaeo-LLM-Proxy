@@ -1196,13 +1196,16 @@ internal partial class MainForm : Form
         Exception? capturedException = null;
         var sw = System.Diagnostics.Stopwatch.StartNew();
         int tokenCount = 0;
+        int heartbeatCount = 0;
+        var streamDiagnostics = new TestConsoleStreamDiagnostics();
 
         try
         {
-            await foreach (TestConsoleToken token in StreamChatAsync(model, upstreamUrl, mapping, requestBody, ct))
+            await foreach (TestConsoleToken token in StreamChatAsync(model, upstreamUrl, mapping, requestBody, streamDiagnostics, ct))
             {
                 if (token.Text == TestConsoleHeartbeatMarker)
                 {
+                    heartbeatCount++;
                     _stats.IncrementHeartbeat(mapping?.ProxyName ?? model);
                     continue;
                 }
@@ -1212,8 +1215,15 @@ internal partial class MainForm : Form
             }
 
             sw.Stop();
+            if (tokenCount == 0 && streamDiagnostics.HasDiagnostics)
+            {
+                string diagnosticText = streamDiagnostics.BuildEmptyResponseMessage(heartbeatCount);
+                _txtTestResponse.AppendText(diagnosticText);
+                responseBuilder.Append(diagnosticText);
+            }
+
             _lblTestStatus.Text = tokenCount == 0
-                ? $"Done in {sw.Elapsed.TotalSeconds:F2}s but no tokens were received from the upstream."
+                ? $"Done in {sw.Elapsed.TotalSeconds:F2}s but no visible tokens were received from the upstream."
                 : $"Done in {sw.Elapsed.TotalSeconds:F2}s ({tokenCount} chunks).";
         }
         catch (OperationCanceledException ocEx)
@@ -1389,7 +1399,11 @@ internal partial class MainForm : Form
     /// yielding each content delta as it arrives.
     /// </summary>
     private async IAsyncEnumerable<TestConsoleToken> StreamChatAsync(
-        string model, string? upstreamUrl, ModelMapping? mapping, string requestBodyJson,
+        string model,
+        string? upstreamUrl,
+        ModelMapping? mapping,
+        string requestBodyJson,
+        TestConsoleStreamDiagnostics diagnostics,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(upstreamUrl))
@@ -1523,53 +1537,104 @@ internal partial class MainForm : Form
                     continue;
 
                 string data = line["data:".Length..].Trim();
+                diagnostics.RecordData(data);
 
                 if (data == "[DONE]")
+                {
+                    diagnostics.MarkDone();
                     yield break;
+                }
 
                 if (!TryParseJsonDocument(data, out JsonDocument? doc))
+                {
+                    diagnostics.RecordParseFailure(data);
+                    continue;
+                }
+
+                if (doc is null)
                     continue;
 
-                using (doc)
+                using (JsonDocument parsed = doc)
                 {
-                    JsonElement root = doc.RootElement;
+                    JsonElement root = parsed.RootElement;
 
                     if (!root.TryGetProperty("choices", out JsonElement choices))
+                    {
+                        foreach (TestConsoleToken token in ExtractTokensFromElement(root))
+                            yield return token;
+
                         continue;
+                    }
+
+                    bool yieldedAnyChoiceToken = false;
 
                     foreach (JsonElement choice in choices.EnumerateArray())
                     {
-                        if (!choice.TryGetProperty("delta", out JsonElement delta))
-                            continue;
-
-                        // Some llama.cpp / OpenAI-compatible servers emit chain-of-thought
-                        // tokens under "reasoning_content" (or "reasoning") and only put
-                        // the final answer under "content". Surface both so thinking models
-                        // don't appear to produce an empty response.
-                        if (delta.TryGetProperty("reasoning_content", out JsonElement rc))
+                        if (choice.TryGetProperty("delta", out JsonElement delta))
                         {
-                            string? rt = rc.GetString();
-                            if (!string.IsNullOrEmpty(rt))
-                                yield return new TestConsoleToken(rt, IsThinking: true);
-                        }
-                        else if (delta.TryGetProperty("reasoning", out JsonElement r))
-                        {
-                            string? rt = r.GetString();
-                            if (!string.IsNullOrEmpty(rt))
-                                yield return new TestConsoleToken(rt, IsThinking: true);
+                            foreach (TestConsoleToken token in ExtractTokensFromElement(delta))
+                            {
+                                yieldedAnyChoiceToken = true;
+                                yield return token;
+                            }
                         }
 
-                        if (delta.TryGetProperty("content", out JsonElement content))
+                        if (choice.TryGetProperty("message", out JsonElement message))
                         {
-                            string? text = content.GetString();
+                            foreach (TestConsoleToken token in ExtractTokensFromElement(message))
+                            {
+                                yieldedAnyChoiceToken = true;
+                                yield return token;
+                            }
+                        }
 
-                            if (!string.IsNullOrEmpty(text))
-                                yield return new TestConsoleToken(text, IsThinking: false);
+                        foreach (TestConsoleToken token in ExtractTokensFromElement(choice))
+                        {
+                            yieldedAnyChoiceToken = true;
+                            yield return token;
                         }
                     }
+
+                    if (!yieldedAnyChoiceToken)
+                        diagnostics.RecordIgnoredChunk(data);
                 }
             }
         }
+    }
+
+    private static IEnumerable<TestConsoleToken> ExtractTokensFromElement(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+            yield break;
+
+        foreach (string propertyName in new[] { "reasoning_content", "reasoning", "reasoning_text" })
+        {
+            if (TryGetStringProperty(element, propertyName, out string? thinking))
+                yield return new TestConsoleToken(thinking, IsThinking: true);
+        }
+
+        foreach (string propertyName in new[] { "content", "text", "response", "output_text" })
+        {
+            if (TryGetStringProperty(element, propertyName, out string? answer))
+                yield return new TestConsoleToken(answer, IsThinking: false);
+        }
+    }
+
+    private static bool TryGetStringProperty(JsonElement element, string propertyName, out string value)
+    {
+        value = string.Empty;
+        if (!element.TryGetProperty(propertyName, out JsonElement property))
+            return false;
+
+        if (property.ValueKind != JsonValueKind.String)
+            return false;
+
+        string? text = property.GetString();
+        if (string.IsNullOrEmpty(text))
+            return false;
+
+        value = text;
+        return true;
     }
 
     private static async Task<HttpResponseMessage> SendTestConsoleRequestAsync(
@@ -1639,29 +1704,10 @@ internal partial class MainForm : Form
             List<TestConsoleToken> tokens = [];
             foreach (JsonElement choice in choices.EnumerateArray())
             {
-                if (!choice.TryGetProperty("message", out JsonElement message))
-                    continue;
+                if (choice.TryGetProperty("message", out JsonElement message))
+                    tokens.AddRange(ExtractTokensFromElement(message));
 
-                if (message.TryGetProperty("reasoning_content", out JsonElement rc))
-                {
-                    string? rt = rc.GetString();
-                    if (!string.IsNullOrEmpty(rt))
-                        tokens.Add(new TestConsoleToken(rt, IsThinking: true));
-                }
-
-                if (message.TryGetProperty("reasoning", out JsonElement r))
-                {
-                    string? rt = r.GetString();
-                    if (!string.IsNullOrEmpty(rt))
-                        tokens.Add(new TestConsoleToken(rt, IsThinking: true));
-                }
-
-                if (message.TryGetProperty("content", out JsonElement content))
-                {
-                    string? text = content.GetString();
-                    if (!string.IsNullOrEmpty(text))
-                        tokens.Add(new TestConsoleToken(text, IsThinking: false));
-                }
+                tokens.AddRange(ExtractTokensFromElement(choice));
             }
 
             return tokens.Count > 0 ? tokens : null;
@@ -1669,4 +1715,60 @@ internal partial class MainForm : Form
     }
 
     private readonly record struct TestConsoleToken(string Text, bool IsThinking);
+
+    private sealed class TestConsoleStreamDiagnostics
+    {
+        private const int MaxSampleLength = 1200;
+
+        private string? _firstData;
+        private string? _lastData;
+        private string? _firstParseFailure;
+        private string? _firstIgnoredChunk;
+
+        public int DataLineCount { get; private set; }
+        public bool SawDone { get; private set; }
+        public bool HasDiagnostics => DataLineCount > 0 || _firstParseFailure is not null || _firstIgnoredChunk is not null;
+
+        public void RecordData(string data)
+        {
+            DataLineCount++;
+            _firstData ??= TrimSample(data);
+            _lastData = TrimSample(data);
+        }
+
+        public void MarkDone() => SawDone = true;
+
+        public void RecordParseFailure(string data) => _firstParseFailure ??= TrimSample(data);
+
+        public void RecordIgnoredChunk(string data) => _firstIgnoredChunk ??= TrimSample(data);
+
+        public string BuildEmptyResponseMessage(int heartbeatCount)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("[No visible assistant text was extracted from the upstream stream.]");
+            sb.AppendLine($"SSE data lines: {DataLineCount:N0}; heartbeats while waiting: {heartbeatCount:N0}; saw [DONE]: {SawDone}");
+
+            if (_firstParseFailure is not null)
+                sb.AppendLine($"First unparsable data line: {_firstParseFailure}");
+
+            if (_firstIgnoredChunk is not null)
+                sb.AppendLine($"First parsed chunk without text fields: {_firstIgnoredChunk}");
+
+            if (_firstData is not null)
+                sb.AppendLine($"First data line: {_firstData}");
+
+            if (_lastData is not null && !string.Equals(_lastData, _firstData, StringComparison.Ordinal))
+                sb.AppendLine($"Last data line: {_lastData}");
+
+            return sb.ToString();
+        }
+
+        private static string TrimSample(string value)
+        {
+            if (value.Length <= MaxSampleLength)
+                return value;
+
+            return value[..MaxSampleLength] + "…";
+        }
+    }
 }
