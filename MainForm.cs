@@ -879,6 +879,8 @@ internal partial class MainForm : Form
         if (edited is null)
             return;
 
+        string oldName = existing.Name;
+
         // Check for duplicate name (excluding the one being edited)
         if (_settings.InstructionSets.Any(i => i != existing && 
             string.Equals(i.Name, edited.Name, StringComparison.OrdinalIgnoreCase)))
@@ -893,7 +895,17 @@ internal partial class MainForm : Form
         existing.Description = edited.Description;
         existing.Instructions = edited.Instructions;
 
+        if (!string.Equals(oldName, edited.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (ModelMapping mapping in _settings.ModelMappings)
+            {
+                if (string.Equals(mapping.InstructionSetName, oldName, StringComparison.OrdinalIgnoreCase))
+                    mapping.InstructionSetName = edited.Name;
+            }
+        }
+
         _settings.Save();
+        LoadSettingsToForm();
         RefreshInstructionsList();
         RefreshInstructionDropdowns();
     }
@@ -913,10 +925,27 @@ internal partial class MainForm : Form
         if (result != DialogResult.Yes)
             return;
 
+        int clearedMappings = 0;
+        foreach (ModelMapping mapping in _settings.ModelMappings)
+        {
+            if (string.Equals(mapping.InstructionSetName, toRemove.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                mapping.InstructionSetName = null;
+                clearedMappings++;
+            }
+        }
+
         _settings.InstructionSets.Remove(toRemove);
         _settings.Save();
+        LoadSettingsToForm();
         RefreshInstructionsList();
         RefreshInstructionDropdowns();
+
+        if (clearedMappings > 0)
+        {
+            MessageBox.Show($"Removed instruction set and cleared it from {clearedMappings} model mapping(s).",
+                "Instruction Set Removed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
     }
 
     // ── Test Console ──────────────────────────────────────────────────────────

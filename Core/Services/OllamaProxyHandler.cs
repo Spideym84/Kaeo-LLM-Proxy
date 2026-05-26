@@ -496,14 +496,17 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             string resolved = _settings.ResolveModelName(original);
             log.Model = original;
             bool applyThinkingCompatibility = shouldApplyThinkingCompatibility?.Invoke(original) ?? true;
+            string? injectedInstructions = GetInstructionTextForModel(original);
 
             // Check whether the messages array has consecutive leading system messages.
             bool hasConsecutiveSystemMessages = false;
             bool hasTrailingAssistantPrefill = false;
+            bool shouldInjectInstructions = false;
             if (root.TryGetProperty("messages", out JsonElement messagesEl)
                 && messagesEl.ValueKind == JsonValueKind.Array)
             {
                 List<JsonElement> messages = [.. messagesEl.EnumerateArray()];
+                shouldInjectInstructions = !string.IsNullOrWhiteSpace(injectedInstructions);
 
                 int leadingSystem = 0;
                 foreach (JsonElement msg in messages)
@@ -524,7 +527,8 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             // Nothing to rewrite — return original text unchanged.
             if (string.Equals(original, resolved, StringComparison.Ordinal)
                 && !hasConsecutiveSystemMessages
-                && !hasTrailingAssistantPrefill)
+                && !hasTrailingAssistantPrefill
+                && !shouldInjectInstructions)
                 return json;
 
             using var ms = new System.IO.MemoryStream();
@@ -540,7 +544,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                 }
                 else if (prop.Name.Equals("messages", StringComparison.OrdinalIgnoreCase)
                       && prop.Value.ValueKind == JsonValueKind.Array
-                      && (hasConsecutiveSystemMessages || hasTrailingAssistantPrefill))
+                      && (hasConsecutiveSystemMessages || hasTrailingAssistantPrefill || shouldInjectInstructions))
                 {
                     writer.WritePropertyName("messages");
                     writer.WriteStartArray();
@@ -549,6 +553,9 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
                     // Collect and merge consecutive leading system message contents.
                     var systemParts = new List<string>();
+                    if (!string.IsNullOrWhiteSpace(injectedInstructions))
+                        systemParts.Add(injectedInstructions);
+
                     bool merging = true;
 
                     for (int i = 0; i < messages.Count; i++)
@@ -637,6 +644,15 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         }
 
         return true;
+    }
+
+    private string? GetInstructionTextForModel(string modelName)
+    {
+        ModelMapping? mapping = _settings.FindModelMapping(modelName);
+        InstructionSet? instructionSet = _settings.FindInstructionSet(mapping?.InstructionSetName);
+        return string.IsNullOrWhiteSpace(instructionSet?.Instructions)
+            ? null
+            : instructionSet.Instructions;
     }
 
     private static bool IsAssistantResponsePrefill(LlamaCppMessage message) =>
