@@ -26,6 +26,14 @@ internal sealed class ProxyServer(OllamaProxyHandler handler) : IDisposable
 
         _listener = new HttpListener();
 
+        // Configure timeouts for long-running AI requests (e.g., extended thinking)
+        // These need to be set BEFORE calling Start()
+        _listener.TimeoutManager.IdleConnection = TimeSpan.FromMinutes(30);
+        _listener.TimeoutManager.HeaderWait = TimeSpan.FromMinutes(5);
+        _listener.TimeoutManager.EntityBody = TimeSpan.FromMinutes(30);
+        _listener.TimeoutManager.DrainEntityBody = TimeSpan.FromMinutes(5);
+        _listener.TimeoutManager.RequestQueue = TimeSpan.FromMinutes(5);
+
         // Normalize the listen address
         string host = listenAddress.Trim();
 

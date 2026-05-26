@@ -721,6 +721,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         {
             resp.ContentType = "application/x-ndjson";
             resp.SendChunked = true;
+            resp.KeepAlive = true; // Keep connection alive during long thinking periods
             await StreamCompletionToOllamaAsync(upstreamResp, resp, ollamaReq.Model, log, _settings.CollectResponseDetails, ct);
         }
         else
@@ -896,6 +897,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             {
                 resp.ContentType = "application/x-ndjson";
                 resp.SendChunked = true;
+                resp.KeepAlive = true; // Keep connection alive during long thinking periods
 
                 // Notify the calling AI in-band that the conversation was summarized
                 // before forwarding the real response. This is the first chunk so the
