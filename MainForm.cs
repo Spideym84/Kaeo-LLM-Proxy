@@ -480,24 +480,38 @@ internal partial class MainForm : Form
                 mapping.EnableThinkingCompatibility,
                 mapping.UpstreamUrl,
                 mapping.UpstreamTimeoutSeconds == 0 ? string.Empty : mapping.UpstreamTimeoutSeconds.ToString(),
-                mapping.UpstreamType.ToString(),
-                mapping.InstructionSetName ?? "(None)",
-                mapping.RedactRequestBodies,
-                mapping.RedactResponseBodies,
-                mapping.RedactSensitiveJsonFields);
+                mapping.UpstreamType.ToString());
+
+            DataGridViewRow row = _dgvMappings.Rows[idx];
+
+            // Carry per-row advanced configuration (instruction set + redaction)
+            // on the row Tag — these fields are edited in the modal Configure dialog.
+            row.Tag = new ModelMapping
+            {
+                OllamaName = mapping.OllamaName,
+                LlamaCppName = mapping.LlamaCppName,
+                EnableThinkingCompatibility = mapping.EnableThinkingCompatibility,
+                UpstreamUrl = mapping.UpstreamUrl,
+                UpstreamTimeoutSeconds = mapping.UpstreamTimeoutSeconds,
+                UpstreamType = mapping.UpstreamType,
+                EnableAutoSummarization = mapping.EnableAutoSummarization,
+                PreserveRecentMessageCount = mapping.PreserveRecentMessageCount,
+                MaxSummarizationRetries = mapping.MaxSummarizationRetries,
+                InstructionSetName = mapping.InstructionSetName,
+                RedactRequestBodies = mapping.RedactRequestBodies,
+                RedactResponseBodies = mapping.RedactResponseBodies,
+                RedactSensitiveJsonFields = mapping.RedactSensitiveJsonFields,
+            };
 
             // The combo cell needs the item to exist before we can set a value.
             DataGridViewComboBoxCell cell =
-                (DataGridViewComboBoxCell)_dgvMappings.Rows[idx].Cells[1];
+                (DataGridViewComboBoxCell)row.Cells[1];
 
             if (!cell.Items.Contains(mapping.LlamaCppName))
                 cell.Items.Add(mapping.LlamaCppName);
 
             cell.Value = mapping.LlamaCppName;
         }
-
-        // Populate instruction set dropdown options
-        RefreshInstructionDropdowns();
 
         // Load instructions list
         RefreshInstructionsList();
@@ -589,6 +603,7 @@ internal partial class MainForm : Form
         _settings.Logging.LogRetentionHours = logRetentionHours;
 
         _settings.ModelMappings.Clear();
+        HashSet<string> seenOllamaNames = new(StringComparer.OrdinalIgnoreCase);
         foreach (DataGridViewRow row in _dgvMappings.Rows)
         {
             string? ollamaName  = row.Cells[0].Value?.ToString();
@@ -597,18 +612,27 @@ internal partial class MainForm : Form
             string? upstreamUrl = row.Cells[3].Value?.ToString() ?? string.Empty;
             string? timeoutStr  = row.Cells[4].Value?.ToString();
             string? upstreamStr = row.Cells[5].Value?.ToString();
-            string? instructionSetName = row.Cells[6].Value?.ToString();
-            bool redactRequestBodies = row.Cells[7].Value as bool? ?? true;
-            bool redactResponseBodies = row.Cells[8].Value as bool? ?? true;
-            bool redactSensitiveJsonFields = row.Cells[9].Value as bool? ?? true;
+
+            // Advanced per-model settings live on the row Tag and are edited via the Configure dialog.
+            ModelMapping? advanced = row.Tag as ModelMapping;
 
             if (!string.IsNullOrWhiteSpace(ollamaName) && !string.IsNullOrWhiteSpace(llamaName))
             {
+                string trimmedOllama = ollamaName.Trim();
+
+                if (!seenOllamaNames.Add(trimmedOllama))
+                {
+                    MessageBox.Show(
+                        $"Duplicate Ollama model name '{trimmedOllama}'. Model names must be unique.",
+                        "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
                 // Validate upstream URL is required
                 if (string.IsNullOrWhiteSpace(upstreamUrl) ||
                     !Uri.TryCreate(upstreamUrl, UriKind.Absolute, out _))
                 {
-                    MessageBox.Show($"Model mapping '{ollamaName}' requires a valid upstream URL.", "Validation",
+                    MessageBox.Show($"Model mapping '{trimmedOllama}' requires a valid upstream URL.", "Validation",
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
@@ -620,22 +644,18 @@ internal partial class MainForm : Form
                 if (!int.TryParse(timeoutStr, out int timeoutSec))
                     timeoutSec = 300;  // Default timeout
 
-                // Normalize "(None)" to null
-                if (string.Equals(instructionSetName, "(None)", StringComparison.OrdinalIgnoreCase))
-                    instructionSetName = null;
-
                 _settings.ModelMappings.Add(new ModelMapping
                 {
-                    OllamaName             = ollamaName.Trim(),
+                    OllamaName             = trimmedOllama,
                     LlamaCppName           = llamaName.Trim(),
                     EnableThinkingCompatibility = enableThinkingCompatibility,
                     UpstreamUrl            = upstreamUrl.Trim(),
                     UpstreamTimeoutSeconds = timeoutSec,
                     UpstreamType           = upstream,
-                    InstructionSetName     = instructionSetName,
-                    RedactRequestBodies    = redactRequestBodies,
-                    RedactResponseBodies   = redactResponseBodies,
-                    RedactSensitiveJsonFields = redactSensitiveJsonFields,
+                    InstructionSetName     = advanced?.InstructionSetName,
+                    RedactRequestBodies    = advanced?.RedactRequestBodies ?? true,
+                    RedactResponseBodies   = advanced?.RedactResponseBodies ?? true,
+                    RedactSensitiveJsonFields = advanced?.RedactSensitiveJsonFields ?? true,
                 });
             }
         }
@@ -657,18 +677,79 @@ internal partial class MainForm : Form
     private void BtnAddMapping_Click(object? sender, EventArgs e)
     {
         // Seed the llama.cpp combo with whatever models are already loaded.
-        // Columns: [0] OllamaName, [1] LlamaCppName, [2] ThinkingCompatibility, [3] UpstreamUrl, [4] Timeout, [5] UpstreamType, [6] InstructionSet, [7-9] Redaction
-        int idx = _dgvMappings.Rows.Add(string.Empty, string.Empty, true, string.Empty, string.Empty, "LlamaCpp", "(None)", true, true, true);
+        // Columns: [0] OllamaName, [1] LlamaCppName, [2] ThinkingCompatibility, [3] UpstreamUrl, [4] Timeout, [5] UpstreamType
+        // Advanced settings (instruction set, redaction) live on row.Tag and are edited via the Configure dialog.
+        int idx = _dgvMappings.Rows.Add(string.Empty, string.Empty, true, string.Empty, string.Empty, "LlamaCpp");
+
+        DataGridViewRow row = _dgvMappings.Rows[idx];
+        row.Tag = new ModelMapping();
 
         // Ensure the value is valid inside the combo items.
         DataGridViewComboBoxCell modelCell =
-            (DataGridViewComboBoxCell)_dgvMappings.Rows[idx].Cells[1];
+            (DataGridViewComboBoxCell)row.Cells[1];
 
         if (modelCell.Items.Count > 0 && modelCell.Value is null)
             modelCell.Value = modelCell.Items[0];
 
-        _dgvMappings.CurrentCell = _dgvMappings.Rows[idx].Cells[0];
+        _dgvMappings.CurrentCell = row.Cells[0];
         _dgvMappings.BeginEdit(true);
+    }
+
+    private void BtnConfigureMapping_Click(object? sender, EventArgs e)
+    {
+        DataGridViewRow? row = GetSelectedMappingRow();
+        if (row is null)
+        {
+            MessageBox.Show("Select a model mapping row to configure.", "Configure Model",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        ConfigureMappingRow(row);
+    }
+
+    private void DgvMappings_CellDoubleClick(object? sender, DataGridViewCellEventArgs e)
+    {
+        if (e.RowIndex < 0 || e.RowIndex >= _dgvMappings.Rows.Count)
+            return;
+
+        // Only react to double-clicks on the row header or non-editable areas to avoid
+        // hijacking normal in-cell edits like the combo dropdown.
+        if (e.ColumnIndex >= 0)
+            return;
+
+        ConfigureMappingRow(_dgvMappings.Rows[e.RowIndex]);
+    }
+
+    private void ConfigureMappingRow(DataGridViewRow row)
+    {
+        if (row.Tag is not ModelMapping mapping)
+        {
+            mapping = new ModelMapping();
+            row.Tag = mapping;
+        }
+
+        // Reflect the current Ollama name in the dialog header.
+        mapping.OllamaName = row.Cells[0].Value?.ToString() ?? string.Empty;
+
+        if (ModelMappingDialog.ShowConfigureDialog(this, mapping, _settings.InstructionSets))
+        {
+            // Tag already updated by the dialog. Nothing else to do here.
+        }
+    }
+
+    private DataGridViewRow? GetSelectedMappingRow()
+    {
+        foreach (DataGridViewRow row in _dgvMappings.SelectedRows)
+        {
+            if (!row.IsNewRow)
+                return row;
+        }
+
+        if (_dgvMappings.CurrentRow is { IsNewRow: false } current)
+            return current;
+
+        return null;
     }
 
     private void BtnRemoveMapping_Click(object? sender, EventArgs e)
@@ -833,17 +914,9 @@ internal partial class MainForm : Form
 
     private void RefreshInstructionDropdowns()
     {
-        // Update the instruction set dropdown in the model mappings grid
-        if (_dgvMappings.Columns[6] is not DataGridViewComboBoxColumn col)
-            return;
-
-        col.Items.Clear();
-        col.Items.Add("(None)");
-
-        foreach (InstructionSet instructionSet in _settings.InstructionSets)
-        {
-            col.Items.Add(instructionSet.Name);
-        }
+        // Instruction set selection has moved to the modal ModelMappingDialog,
+        // which populates its own combo from _settings.InstructionSets each time
+        // it is opened. No grid-level dropdown to refresh.
     }
 
     private void LstInstructions_SelectedIndexChanged(object? sender, EventArgs e)

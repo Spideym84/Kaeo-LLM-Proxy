@@ -95,13 +95,10 @@ partial class MainForm
         _colUpstreamUrl = new DataGridViewTextBoxColumn();
         _colUpstreamTimeout = new DataGridViewTextBoxColumn();
         _colUpstreamType = new DataGridViewComboBoxColumn();
-        _colInstructionSet = new DataGridViewComboBoxColumn();
-        _colRedactRequestBodies = new DataGridViewCheckBoxColumn();
-        _colRedactResponseBodies = new DataGridViewCheckBoxColumn();
-        _colRedactSensitiveJson = new DataGridViewCheckBoxColumn();
         _btnSaveSettings = new Button();
         _btnAddMapping = new Button();
         _btnRemoveMapping = new Button();
+        _btnConfigureMapping = new Button();
         _btnFetchModels = new Button();
         _chkAutoStart = new CheckBox();
         _chkStartWithDashboard = new CheckBox();
@@ -564,8 +561,8 @@ partial class MainForm
         _tlpSettings.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         _tlpSettings.Location = new Point(8, 8);
         _tlpSettings.Name = "_tlpSettings";
-        _tlpSettings.RowCount = 12;
-        _tlpSettings.Size = new Size(660, 420);
+        _tlpSettings.RowCount = 13;
+        _tlpSettings.Size = new Size(660, 460);
 
         _tlpSettings.Controls.Add(_lblListenPort, 0, 0);
         _tlpSettings.Controls.Add(_txtListenPort, 1, 0);
@@ -590,8 +587,10 @@ partial class MainForm
         _tlpSettings.SetColumnSpan(_btnAddMapping, 1);
         _tlpSettings.Controls.Add(_btnAddMapping, 0, 10);
         _tlpSettings.Controls.Add(_btnRemoveMapping, 1, 10);
+        _tlpSettings.SetColumnSpan(_btnConfigureMapping, 2);
+        _tlpSettings.Controls.Add(_btnConfigureMapping, 0, 11);
         _tlpSettings.SetColumnSpan(_btnSaveSettings, 2);
-        _tlpSettings.Controls.Add(_btnSaveSettings, 0, 11);
+        _tlpSettings.Controls.Add(_btnSaveSettings, 0, 12);
 
         _lblListenPort.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         _lblListenPort.AutoSize = true;
@@ -662,14 +661,11 @@ partial class MainForm
         _dgvMappings.Columns.Add(_colUpstreamUrl);
         _dgvMappings.Columns.Add(_colUpstreamTimeout);
         _dgvMappings.Columns.Add(_colUpstreamType);
-        _dgvMappings.Columns.Add(_colInstructionSet);
-        _dgvMappings.Columns.Add(_colRedactRequestBodies);
-        _dgvMappings.Columns.Add(_colRedactResponseBodies);
-        _dgvMappings.Columns.Add(_colRedactSensitiveJson);
         _dgvMappings.Dock = DockStyle.Fill;
         _dgvMappings.Margin = new Padding(4, 4, 4, 4);
         _dgvMappings.MinimumSize = new Size(0, 120);
         _dgvMappings.Name = "_dgvMappings";
+        _dgvMappings.CellDoubleClick += DgvMappings_CellDoubleClick;
 
         _colOllamaName.HeaderText = "Ollama Name";
         _colOllamaName.Name = "_colOllamaName";
@@ -704,31 +700,6 @@ partial class MainForm
         _colUpstreamType.Width = 110;
         _colUpstreamType.FillWeight = 60;
 
-        _colInstructionSet.DisplayStyleForCurrentCellOnly = true;
-        _colInstructionSet.FlatStyle = FlatStyle.Flat;
-        _colInstructionSet.HeaderText = "Instruction Set";
-        _colInstructionSet.Name = "_colInstructionSet";
-        _colInstructionSet.FillWeight = 100;
-        _colInstructionSet.DefaultCellStyle.NullValue = "(None)";
-
-        _colRedactRequestBodies.HeaderText = "Redact Req";
-        _colRedactRequestBodies.Name = "_colRedactRequestBodies";
-        _colRedactRequestBodies.FillWeight = 60;
-        _colRedactRequestBodies.TrueValue = true;
-        _colRedactRequestBodies.FalseValue = false;
-
-        _colRedactResponseBodies.HeaderText = "Redact Resp";
-        _colRedactResponseBodies.Name = "_colRedactResponseBodies";
-        _colRedactResponseBodies.FillWeight = 60;
-        _colRedactResponseBodies.TrueValue = true;
-        _colRedactResponseBodies.FalseValue = false;
-
-        _colRedactSensitiveJson.HeaderText = "Redact JSON";
-        _colRedactSensitiveJson.Name = "_colRedactSensitiveJson";
-        _colRedactSensitiveJson.FillWeight = 60;
-        _colRedactSensitiveJson.TrueValue = true;
-        _colRedactSensitiveJson.FalseValue = false;
-
         _btnAddMapping.AutoSize = true;
         _btnAddMapping.Margin = new Padding(4, 8, 4, 4);
         _btnAddMapping.Name = "_btnAddMapping";
@@ -741,6 +712,13 @@ partial class MainForm
         _btnRemoveMapping.Name = "_btnRemoveMapping";
         _btnRemoveMapping.Text = "Remove Selected";
         _btnRemoveMapping.Click += BtnRemoveMapping_Click;
+
+        _btnConfigureMapping.AutoSize = true;
+        _btnConfigureMapping.Anchor = AnchorStyles.Left;
+        _btnConfigureMapping.Margin = new Padding(4, 8, 4, 4);
+        _btnConfigureMapping.Name = "_btnConfigureMapping";
+        _btnConfigureMapping.Text = "Configure Selected…";
+        _btnConfigureMapping.Click += BtnConfigureMapping_Click;
 
         _btnFetchModels.Anchor = AnchorStyles.Right;
         _btnFetchModels.AutoSize = true;
@@ -1160,12 +1138,9 @@ partial class MainForm
     private DataGridViewTextBoxColumn _colUpstreamUrl;
     private DataGridViewTextBoxColumn _colUpstreamTimeout;
     private DataGridViewComboBoxColumn _colUpstreamType;
-    private DataGridViewComboBoxColumn _colInstructionSet;
-    private DataGridViewCheckBoxColumn _colRedactRequestBodies;
-    private DataGridViewCheckBoxColumn _colRedactResponseBodies;
-    private DataGridViewCheckBoxColumn _colRedactSensitiveJson;
     private Button _btnAddMapping;
     private Button _btnRemoveMapping;
+    private Button _btnConfigureMapping;
     private Button _btnFetchModels;
     private Button _btnSaveSettings;
     private CheckBox _chkAutoStart;
