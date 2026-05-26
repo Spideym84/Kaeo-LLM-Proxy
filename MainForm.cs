@@ -1165,6 +1165,8 @@ internal partial class MainForm : Form
             messages.Add(new { role = "system", content = instructionSet.Instructions });
         messages.Add(new { role = "user", content = prompt });
 
+        bool disableReasoningForCompatibility = mapping?.EnableThinkingCompatibility ?? true;
+
         double temperature = (double)_nudTestTemp.Value;
         double repeatPenalty = (double)_nudTestRepeatPenalty.Value;
 
@@ -1174,6 +1176,14 @@ internal partial class MainForm : Form
             stream = true,
             temperature,
             repeat_penalty = repeatPenalty,
+            reasoning = disableReasoningForCompatibility ? new { effort = "none", exclude = true } : null,
+            chat_template_kwargs = disableReasoningForCompatibility
+                ? new Dictionary<string, object>
+                {
+                    ["enable_thinking"] = false,
+                    ["reasoning"] = false,
+                }
+                : null,
             messages,
         };
         string requestBody = JsonSerializer.Serialize(payload, _indentedJsonOptions);
