@@ -650,6 +650,10 @@ partial class MainForm
 
         _dgvMappings.AllowUserToAddRows = false;
         _dgvMappings.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+        _dgvMappings.ReadOnly = true;
+        _dgvMappings.EditMode = DataGridViewEditMode.EditProgrammatically;
+        _dgvMappings.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+        _dgvMappings.MultiSelect = false;
         _dgvMappings.Columns.Add(_colProxyName);
         _dgvMappings.Columns.Add(_colModelName);
         _dgvMappings.Columns.Add(_colUpstreamUrl);

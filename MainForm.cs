@@ -669,23 +669,35 @@ internal partial class MainForm : Form
 
     private void BtnAddMapping_Click(object? sender, EventArgs e)
     {
-        // Seed the model combo with whatever models are already loaded.
-        // Columns: [0] ProxyName, [1] ModelName, [2] UpstreamUrl, [3] UpstreamType
-        // Advanced settings (thinking, timeout, instructions, redaction) live on row.Tag and are edited via the Configure dialog.
-        int idx = _dgvMappings.Rows.Add(string.Empty, string.Empty, string.Empty, "LlamaCpp");
+        // All editing happens in the modal. Create a fresh mapping, let the user
+        // configure it, and only add a grid row on OK.
+        ModelMapping mapping = new();
+
+        if (!ModelMappingDialog.ShowConfigureDialog(this, mapping, _settings.InstructionSets, [], out List<string> updatedModelItems))
+            return;
+
+        int idx = _dgvMappings.Rows.Add(
+            mapping.ProxyName,
+            string.Empty,
+            mapping.UpstreamUrl,
+            mapping.UpstreamType.ToString());
 
         DataGridViewRow row = _dgvMappings.Rows[idx];
-        row.Tag = new ModelMapping();
+        row.Tag = mapping;
 
-        // Ensure the value is valid inside the combo items.
-        DataGridViewComboBoxCell modelCell =
-            (DataGridViewComboBoxCell)row.Cells[_colModelName.Name];
+        DataGridViewComboBoxCell modelCell = (DataGridViewComboBoxCell)row.Cells[_colModelName.Name];
+        if (updatedModelItems.Count > 0)
+            modelCell.Items.AddRange([.. updatedModelItems.Cast<object>()]);
 
-        if (modelCell.Items.Count > 0 && modelCell.Value is null)
-            modelCell.Value = modelCell.Items[0];
+        if (!string.IsNullOrWhiteSpace(mapping.ModelName))
+        {
+            if (!modelCell.Items.Contains(mapping.ModelName))
+                modelCell.Items.Add(mapping.ModelName);
+            modelCell.Value = mapping.ModelName;
+        }
 
-        _dgvMappings.CurrentCell = row.Cells[_colProxyName.Name];
-        _dgvMappings.BeginEdit(true);
+        _dgvMappings.ClearSelection();
+        row.Selected = true;
     }
 
     private void BtnConfigureMapping_Click(object? sender, EventArgs e)
@@ -704,11 +716,6 @@ internal partial class MainForm : Form
     private void DgvMappings_CellDoubleClick(object? sender, DataGridViewCellEventArgs e)
     {
         if (e.RowIndex < 0 || e.RowIndex >= _dgvMappings.Rows.Count)
-            return;
-
-        // Only react to double-clicks on the row header or non-editable areas to avoid
-        // hijacking normal in-cell edits like the combo dropdown.
-        if (e.ColumnIndex >= 0)
             return;
 
         ConfigureMappingRow(_dgvMappings.Rows[e.RowIndex]);
@@ -733,6 +740,12 @@ internal partial class MainForm : Form
 
         if (ModelMappingDialog.ShowConfigureDialog(this, mapping, _settings.InstructionSets, existingItems, out List<string> updatedModelItems))
         {
+            // Write user-edited values back into the grid cells. The grid is read-only;
+            // these values come exclusively from the modal.
+            row.Cells[_colProxyName.Name].Value = mapping.ProxyName;
+            row.Cells[_colUpstreamUrl.Name].Value = mapping.UpstreamUrl;
+            row.Cells[_colUpstreamType.Name].Value = mapping.UpstreamType.ToString();
+
             // Sync the dialog's model list and selected model back into the grid cell.
             modelCell.Items.Clear();
             if (updatedModelItems.Count > 0)
@@ -744,6 +757,10 @@ internal partial class MainForm : Form
                     modelCell.Items.Add(mapping.ModelName);
 
                 modelCell.Value = mapping.ModelName;
+            }
+            else
+            {
+                modelCell.Value = null;
             }
         }
     }
