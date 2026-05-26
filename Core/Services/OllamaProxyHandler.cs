@@ -391,14 +391,15 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
         bool isServerSentEvents = IsServerSentEventsResponse(upstreamResp);
 
+        using CountingStream countingStream = new(resp.OutputStream);
         if (_settings.CollectResponseDetails)
         {
-            using MemoryStream buffer = new();
+            using ResponseCaptureStream captureStream = new(countingStream);
             if (isServerSentEvents)
             {
                 await CopyStreamWithSseHeartbeatsAsync(
                     upstreamStream,
-                    buffer,
+                    captureStream,
                     ShouldEmitHeartbeats(originalModel),
                     _settings.StreamingHeartbeatIntervalSeconds,
                     ct,
@@ -406,34 +407,27 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             }
             else
             {
-                await upstreamStream.CopyToAsync(buffer, ct);
+                await upstreamStream.CopyToAsync(captureStream, ct);
             }
 
-            byte[] responseBytes = buffer.ToArray();
-            log.ResponseBytes = responseBytes.Length;
-            log.ResponseBody = RedactResponseBodyForLog(Encoding.UTF8.GetString(responseBytes), originalModel);
-            await resp.OutputStream.WriteAsync(responseBytes, ct);
+            log.ResponseBody = RedactResponseBodyForLog(captureStream.GetCapturedText(), originalModel);
+        }
+        else if (isServerSentEvents)
+        {
+            await CopyStreamWithSseHeartbeatsAsync(
+                upstreamStream,
+                countingStream,
+                ShouldEmitHeartbeats(originalModel),
+                _settings.StreamingHeartbeatIntervalSeconds,
+                ct,
+                () => _stats.IncrementHeartbeat(originalModel));
         }
         else
         {
-            using CountingStream countingStream = new(resp.OutputStream);
-            if (isServerSentEvents)
-            {
-                await CopyStreamWithSseHeartbeatsAsync(
-                    upstreamStream,
-                    countingStream,
-                    ShouldEmitHeartbeats(originalModel),
-                    _settings.StreamingHeartbeatIntervalSeconds,
-                    ct,
-                    () => _stats.IncrementHeartbeat(originalModel));
-            }
-            else
-            {
-                await upstreamStream.CopyToAsync(countingStream, ct);
-            }
-
-            log.ResponseBytes = countingStream.BytesWritten;
+            await upstreamStream.CopyToAsync(countingStream, ct);
         }
+
+        log.ResponseBytes = countingStream.BytesWritten;
 
         resp.OutputStream.Close();
 
@@ -1741,6 +1735,42 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         {
             await inner.WriteAsync(buffer, ct);
             BytesWritten += buffer.Length;
+        }
+    }
+
+    /// <summary>Captures bytes written through it while forwarding them immediately to the inner stream.</summary>
+    private sealed class ResponseCaptureStream(Stream inner) : Stream
+    {
+        private readonly MemoryStream _capture = new();
+
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() => inner.Flush();
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public string GetCapturedText() => Encoding.UTF8.GetString(_capture.ToArray());
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            inner.Write(buffer, offset, count);
+            _capture.Write(buffer, offset, count);
+        }
+
+        public override async Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken ct)
+        {
+            await inner.WriteAsync(buffer.AsMemory(offset, count), ct);
+            await _capture.WriteAsync(buffer.AsMemory(offset, count), ct);
+        }
+
+        public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken ct = default)
+        {
+            await inner.WriteAsync(buffer, ct);
+            await _capture.WriteAsync(buffer, ct);
         }
     }
 }

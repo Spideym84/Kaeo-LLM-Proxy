@@ -19,6 +19,8 @@ internal partial class MainForm : Form
 
     internal event EventHandler? MinimizedToTray;
 
+    private const string TestConsoleHeartbeatMarker = "__kaeo_test_console_heartbeat__";
+
     private static readonly JsonSerializerOptions _indentedJsonOptions = new() { WriteIndented = true };
 
     public MainForm(AppSettings settings, StatisticsService stats, ProxyServer server, OllamaProxyHandler handler, PerformanceService perfService)
@@ -1199,6 +1201,12 @@ internal partial class MainForm : Form
         {
             await foreach (TestConsoleToken token in StreamChatAsync(model, upstreamUrl, mapping, requestBody, ct))
             {
+                if (token.Text == TestConsoleHeartbeatMarker)
+                {
+                    _stats.IncrementHeartbeat(mapping?.ProxyName ?? model);
+                    continue;
+                }
+
                 tokenCount++;
                 AppendTestConsoleToken(token, responseBuilder, ref hasThinkingOutput, ref hasAnswerOutput);
             }
@@ -1413,17 +1421,7 @@ internal partial class MainForm : Form
         System.Diagnostics.Debug.WriteLine(
             $"[TestConsole] POST {upstreamUrl.TrimEnd('/')}/v1/chat/completions model={model}");
 
-        HttpResponseMessage resp;
-        try
-        {
-            resp = await client.SendAsync(
-                reqMsg, HttpCompletionOption.ResponseHeadersRead, requestCts.Token);
-        }
-        catch (TaskCanceledException) when (!ct.IsCancellationRequested)
-        {
-            throw new TimeoutException(
-                $"Upstream did not respond within {timeout}s while sending the request.");
-        }
+        HttpResponseMessage resp = await SendTestConsoleRequestAsync(client, reqMsg, timeout, ct, requestCts.Token);
 
         using (resp)
         {
@@ -1468,25 +1466,49 @@ internal partial class MainForm : Form
 
             // Per-read inactivity timeout: if no bytes arrive for this long, fail.
             TimeSpan inactivityTimeout = TimeSpan.FromSeconds(Math.Max(30, timeout / 4));
+            bool enableHeartbeats = _settings.EnableStreamingHeartbeats && (mapping?.EnableHeartbeats ?? true);
+            TimeSpan heartbeatInterval = TimeSpan.FromSeconds(Math.Clamp(_settings.StreamingHeartbeatIntervalSeconds, 5, 300));
 
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
 
-                using var readCts = CancellationTokenSource.CreateLinkedTokenSource(requestCts.Token);
-                readCts.CancelAfter(inactivityTimeout);
+                Task<string?> readTask = reader.ReadLineAsync(requestCts.Token).AsTask();
+                DateTime readStartedUtc = DateTime.UtcNow;
+                DateTime nextHeartbeatUtc = readStartedUtc.Add(heartbeatInterval);
 
-                string? line;
-                try
+                while (!readTask.IsCompleted)
                 {
-                    line = await reader.ReadLineAsync(readCts.Token);
+                    TimeSpan elapsed = DateTime.UtcNow - readStartedUtc;
+                    TimeSpan untilTimeout = inactivityTimeout - elapsed;
+                    if (untilTimeout <= TimeSpan.Zero)
+                    {
+                        throw new TimeoutException(
+                            $"No data received from upstream for {inactivityTimeout.TotalSeconds:F0}s. Aborting.");
+                    }
+
+                    TimeSpan delay = untilTimeout;
+                    if (enableHeartbeats)
+                    {
+                        TimeSpan untilHeartbeat = nextHeartbeatUtc - DateTime.UtcNow;
+                        if (untilHeartbeat < TimeSpan.Zero)
+                            untilHeartbeat = TimeSpan.Zero;
+
+                        delay = untilHeartbeat < delay ? untilHeartbeat : delay;
+                    }
+
+                    Task completed = await Task.WhenAny(readTask, Task.Delay(delay, requestCts.Token));
+                    if (completed == readTask)
+                        break;
+
+                    if (enableHeartbeats && DateTime.UtcNow >= nextHeartbeatUtc)
+                    {
+                        yield return new TestConsoleToken(TestConsoleHeartbeatMarker, IsThinking: false);
+                        nextHeartbeatUtc = DateTime.UtcNow.Add(heartbeatInterval);
+                    }
                 }
-                catch (OperationCanceledException) when (
-                    readCts.IsCancellationRequested && !ct.IsCancellationRequested && !requestCts.IsCancellationRequested)
-                {
-                    throw new TimeoutException(
-                        $"No data received from upstream for {inactivityTimeout.TotalSeconds:F0}s. Aborting.");
-                }
+
+                string? line = await readTask;
 
                 if (line is null)
                 {
@@ -1505,51 +1527,83 @@ internal partial class MainForm : Form
                 if (data == "[DONE]")
                     yield break;
 
-                JsonElement root;
-
-                try
-                {
-                    root = JsonDocument.Parse(data).RootElement;
-                }
-                catch (JsonException)
-                {
-                    continue;
-                }
-
-                if (!root.TryGetProperty("choices", out JsonElement choices))
+                if (!TryParseJsonDocument(data, out JsonDocument? doc))
                     continue;
 
-                foreach (JsonElement choice in choices.EnumerateArray())
+                using (doc)
                 {
-                    if (!choice.TryGetProperty("delta", out JsonElement delta))
+                    JsonElement root = doc.RootElement;
+
+                    if (!root.TryGetProperty("choices", out JsonElement choices))
                         continue;
 
-                    // Some llama.cpp / OpenAI-compatible servers emit chain-of-thought
-                    // tokens under "reasoning_content" (or "reasoning") and only put
-                    // the final answer under "content". Surface both so thinking models
-                    // don't appear to produce an empty response.
-                    if (delta.TryGetProperty("reasoning_content", out JsonElement rc))
+                    foreach (JsonElement choice in choices.EnumerateArray())
                     {
-                        string? rt = rc.GetString();
-                        if (!string.IsNullOrEmpty(rt))
-                            yield return new TestConsoleToken(rt, IsThinking: true);
-                    }
-                    else if (delta.TryGetProperty("reasoning", out JsonElement r))
-                    {
-                        string? rt = r.GetString();
-                        if (!string.IsNullOrEmpty(rt))
-                            yield return new TestConsoleToken(rt, IsThinking: true);
-                    }
+                        if (!choice.TryGetProperty("delta", out JsonElement delta))
+                            continue;
 
-                    if (delta.TryGetProperty("content", out JsonElement content))
-                    {
-                        string? text = content.GetString();
+                        // Some llama.cpp / OpenAI-compatible servers emit chain-of-thought
+                        // tokens under "reasoning_content" (or "reasoning") and only put
+                        // the final answer under "content". Surface both so thinking models
+                        // don't appear to produce an empty response.
+                        if (delta.TryGetProperty("reasoning_content", out JsonElement rc))
+                        {
+                            string? rt = rc.GetString();
+                            if (!string.IsNullOrEmpty(rt))
+                                yield return new TestConsoleToken(rt, IsThinking: true);
+                        }
+                        else if (delta.TryGetProperty("reasoning", out JsonElement r))
+                        {
+                            string? rt = r.GetString();
+                            if (!string.IsNullOrEmpty(rt))
+                                yield return new TestConsoleToken(rt, IsThinking: true);
+                        }
 
-                        if (!string.IsNullOrEmpty(text))
-                            yield return new TestConsoleToken(text, IsThinking: false);
+                        if (delta.TryGetProperty("content", out JsonElement content))
+                        {
+                            string? text = content.GetString();
+
+                            if (!string.IsNullOrEmpty(text))
+                                yield return new TestConsoleToken(text, IsThinking: false);
+                        }
                     }
                 }
             }
+        }
+    }
+
+    private static async Task<HttpResponseMessage> SendTestConsoleRequestAsync(
+        HttpClient client,
+        HttpRequestMessage request,
+        int timeoutSeconds,
+        CancellationToken userCancellationToken,
+        CancellationToken requestCancellationToken)
+    {
+        try
+        {
+            return await client.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                requestCancellationToken);
+        }
+        catch (TaskCanceledException) when (!userCancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"Upstream did not respond within {timeoutSeconds}s while sending the request.");
+        }
+    }
+
+    private static bool TryParseJsonDocument(string json, out JsonDocument? document)
+    {
+        try
+        {
+            document = JsonDocument.Parse(json);
+            return true;
+        }
+        catch (JsonException)
+        {
+            document = null;
+            return false;
         }
     }
 
