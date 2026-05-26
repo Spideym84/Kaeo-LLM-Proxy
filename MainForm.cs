@@ -1040,15 +1040,61 @@ internal partial class MainForm : Form
         _testSendCts = new CancellationTokenSource();
         CancellationToken ct = _testSendCts.Token;
 
+        // Resolve mapping + upstream up-front so the log entry has full context.
+        string? upstreamUrl = _testModelToUpstream.TryGetValue(model, out string? discoveredUrl)
+            ? discoveredUrl
+            : null;
+        ModelMapping? mapping = _settings.ModelMappings.FirstOrDefault(m =>
+            string.Equals(m.ProxyName, model, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(m.ModelName, model, StringComparison.OrdinalIgnoreCase));
+
+        if (string.IsNullOrWhiteSpace(upstreamUrl))
+            upstreamUrl = mapping?.UpstreamUrl;
+
+        // Inject configured instruction set (if any) as a leading system message.
+        InstructionSet? instructionSet = mapping is null
+            ? null
+            : _settings.FindInstructionSet(mapping.InstructionSetName);
+
+        var messages = new List<object>();
+        if (instructionSet is not null && !string.IsNullOrWhiteSpace(instructionSet.Instructions))
+            messages.Add(new { role = "system", content = instructionSet.Instructions });
+        messages.Add(new { role = "user", content = prompt });
+
+        double temperature = (double)_nudTestTemp.Value;
+
+        var payload = new
+        {
+            model,
+            stream = true,
+            temperature,
+            messages,
+        };
+        string requestBody = JsonSerializer.Serialize(payload, _indentedJsonOptions);
+
+        var log = new RequestLog
+        {
+            Method = "POST",
+            OllamaPath = "(test console)",
+            UpstreamPath = "/v1/chat/completions",
+            Model = model,
+            Streaming = true,
+            Status = RequestStatus.Success,
+            RequestBody = _settings.CollectRequestDetails ? requestBody : null,
+            RequestBytes = Encoding.UTF8.GetByteCount(requestBody),
+        };
+
+        var responseBuilder = new StringBuilder();
+        Exception? capturedException = null;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        int tokenCount = 0;
+
         try
         {
-            double temperature = (double)_nudTestTemp.Value;
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            int tokenCount = 0;
-
-            await foreach (string token in StreamChatAsync(model, prompt, temperature, ct))
+            await foreach (string token in StreamChatAsync(model, upstreamUrl, mapping, requestBody, ct))
             {
                 tokenCount++;
+                responseBuilder.Append(token);
                 _txtTestResponse.AppendText(token);
             }
 
@@ -1057,16 +1103,35 @@ internal partial class MainForm : Form
                 ? $"Done in {sw.Elapsed.TotalSeconds:F2}s but no tokens were received from the upstream."
                 : $"Done in {sw.Elapsed.TotalSeconds:F2}s ({tokenCount} chunks).";
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ocEx)
         {
+            sw.Stop();
+            log.Status = RequestStatus.Cancelled;
+            log.ErrorMessage = "Cancelled by user.";
+            capturedException = ocEx;
             _lblTestStatus.Text = "Cancelled.";
         }
         catch (Exception ex)
         {
+            sw.Stop();
+            log.Status = RequestStatus.Error;
+            log.ErrorMessage = $"{ex.GetType().Name}: {ex.Message}";
+            capturedException = ex;
             HandleTestConsoleException(ex);
         }
         finally
         {
+            log.DurationMs = sw.Elapsed.TotalMilliseconds;
+            log.CompletionTokens = tokenCount;
+            string responseText = responseBuilder.ToString();
+            log.ResponseBytes = Encoding.UTF8.GetByteCount(responseText);
+            if (_settings.CollectResponseDetails)
+                log.ResponseBody = responseText;
+            if (log.DurationMs > 0)
+                log.TokensPerSecond = tokenCount / (log.DurationMs / 1000.0);
+
+            _stats.AddLog(log, capturedException);
+
             _btnTestSend.Enabled = true;
             _btnTestCancel.Enabled = false;
             _testSendCts?.Dispose();
@@ -1105,19 +1170,9 @@ internal partial class MainForm : Form
     /// yielding each content delta as it arrives.
     /// </summary>
     private async IAsyncEnumerable<string> StreamChatAsync(
-        string model, string prompt, double temperature,
+        string model, string? upstreamUrl, ModelMapping? mapping, string requestBodyJson,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        // Prefer the upstream we actually discovered this model on. Fall back to any
-        // configured mapping that names the same proxy/model identifier.
-        string? upstreamUrl = _testModelToUpstream.TryGetValue(model, out string? url) ? url : null;
-        ModelMapping? mapping = _settings.ModelMappings.FirstOrDefault(m =>
-            string.Equals(m.ProxyName, model, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(m.ModelName, model, StringComparison.OrdinalIgnoreCase));
-
-        if (string.IsNullOrWhiteSpace(upstreamUrl))
-            upstreamUrl = mapping?.UpstreamUrl;
-
         if (string.IsNullOrWhiteSpace(upstreamUrl))
         {
             yield return "[ERROR: No upstream URL configured for this model]";
@@ -1134,20 +1189,9 @@ internal partial class MainForm : Form
             Timeout = Timeout.InfiniteTimeSpan,
         };
 
-        var payload = new
-        {
-            model,
-            stream = true,
-            temperature,
-            messages = new[]
-            {
-                new { role = "user", content = prompt },
-            },
-        };
-
         using var reqMsg = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions")
         {
-            Content = JsonContent.Create(payload),
+            Content = new StringContent(requestBodyJson, Encoding.UTF8, "application/json"),
         };
         reqMsg.Headers.Accept.ParseAdd("text/event-stream");
 
