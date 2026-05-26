@@ -729,12 +729,29 @@ internal partial class MainForm : Form
             row.Tag = mapping;
         }
 
-        // Reflect the current proxy name in the dialog header.
+        // Reflect the current row values in the dialog so it can edit and fetch
+        // models for this specific upstream.
         mapping.ProxyName = row.Cells[_colProxyName.Name].Value?.ToString() ?? string.Empty;
+        mapping.UpstreamUrl = row.Cells[_colUpstreamUrl.Name].Value?.ToString() ?? string.Empty;
+        mapping.ModelName = row.Cells[_colModelName.Name].Value?.ToString() ?? string.Empty;
 
-        if (ModelMappingDialog.ShowConfigureDialog(this, mapping, _settings.InstructionSets))
+        DataGridViewComboBoxCell modelCell = (DataGridViewComboBoxCell)row.Cells[_colModelName.Name];
+        List<string> existingItems = [.. modelCell.Items.Cast<object>().Select(o => o?.ToString() ?? string.Empty)];
+
+        if (ModelMappingDialog.ShowConfigureDialog(this, mapping, _settings.InstructionSets, existingItems, out List<string> updatedModelItems))
         {
-            // Tag already updated by the dialog. Nothing else to do here.
+            // Sync the dialog's model list and selected model back into the grid cell.
+            modelCell.Items.Clear();
+            if (updatedModelItems.Count > 0)
+                modelCell.Items.AddRange([.. updatedModelItems.Cast<object>()]);
+
+            if (!string.IsNullOrWhiteSpace(mapping.ModelName))
+            {
+                if (!modelCell.Items.Contains(mapping.ModelName))
+                    modelCell.Items.Add(mapping.ModelName);
+
+                modelCell.Value = mapping.ModelName;
+            }
         }
     }
 
@@ -758,126 +775,6 @@ internal partial class MainForm : Form
         {
             if (!row.IsNewRow)
                 _dgvMappings.Rows.Remove(row);
-        }
-    }
-
-    // ── Model fetching ────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Fetches the model list from the specified upstream URL and returns the ids, or an empty list on failure.
-    /// </summary>
-    private static async Task<List<string>> FetchUpstreamModelsAsync(string upstreamUrl)
-    {
-        try
-        {
-            using var client = new HttpClient
-            {
-                BaseAddress = new Uri(upstreamUrl),
-                Timeout = TimeSpan.FromSeconds(10),
-            };
-
-            using HttpResponseMessage resp = await client.GetAsync("/v1/models");
-
-            if (!resp.IsSuccessStatusCode)
-                return [];
-
-            using JsonDocument doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
-            JsonElement data = doc.RootElement.GetProperty("data");
-
-            var models = new List<string>();
-
-            foreach (JsonElement item in data.EnumerateArray())
-            {
-                if (item.TryGetProperty("id", out JsonElement id))
-                {
-                    string? name = id.GetString();
-                    if (!string.IsNullOrWhiteSpace(name))
-                        models.Add(name);
-                }
-            }
-
-            return models;
-        }
-        catch
-        {
-            return [];
-        }
-    }
-
-    private async void BtnFetchModels_Click(object? sender, EventArgs e)
-    {
-        // Get selected rows or all rows if none selected
-        List<DataGridViewRow> rowsToFetch = _dgvMappings.SelectedRows.Count > 0
-            ? [.. _dgvMappings.SelectedRows.Cast<DataGridViewRow>().Where(r => !r.IsNewRow)]
-            : [.. _dgvMappings.Rows.Cast<DataGridViewRow>().Where(r => !r.IsNewRow)];
-
-        if (rowsToFetch.Count == 0)
-        {
-            MessageBox.Show("No model mappings to fetch from. Add a row with an upstream URL first.",
-                "No Rows", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            return;
-        }
-
-        _btnFetchModels.Enabled = false;
-        _btnFetchModels.Text = "Fetching…";
-
-        try
-        {
-            int successCount = 0;
-            int failCount = 0;
-
-            foreach (DataGridViewRow row in rowsToFetch)
-            {
-                string? upstreamUrl = row.Cells[_colUpstreamUrl.Name].Value?.ToString();
-
-                if (string.IsNullOrWhiteSpace(upstreamUrl))
-                {
-                    failCount++;
-                    continue;
-                }
-
-                List<string> models = await FetchUpstreamModelsAsync(upstreamUrl);
-
-                if (models.Count == 0)
-                {
-                    failCount++;
-                    continue;
-                }
-
-                // Update this row's model combo cell
-                DataGridViewComboBoxCell cell = (DataGridViewComboBoxCell)row.Cells[_colModelName.Name];
-                string? current = cell.Value?.ToString();
-
-                cell.Items.Clear();
-                cell.Items.AddRange([.. models]);
-
-                cell.Value = (current is not null && models.Contains(current))
-                    ? current
-                    : (models.Count > 0 ? models[0] : null);
-
-                successCount++;
-            }
-
-            if (successCount > 0 && failCount > 0)
-            {
-                MessageBox.Show($"Fetched models for {successCount} row(s). {failCount} row(s) failed.",
-                    "Partial Success", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            }
-            else if (successCount > 0)
-            {
-                MessageBox.Show($"Successfully fetched models for {successCount} row(s).",
-                    "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-            else
-            {
-                MessageBox.Show("Failed to fetch models from all selected rows. Check upstream URLs.",
-                    "Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-        finally
-        {
-            _btnFetchModels.Enabled = true;
-            _btnFetchModels.Text = "Fetch Models ↓";
         }
     }
 
@@ -1073,7 +970,7 @@ internal partial class MainForm : Form
 
             foreach (string url in upstreamUrls)
             {
-                List<string> models = await FetchUpstreamModelsAsync(url);
+                List<string> models = await ModelMappingDialog.FetchUpstreamModelsAsync(url);
                 foreach (string model in models)
                     allModels.Add(model);
             }

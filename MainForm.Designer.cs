@@ -99,7 +99,6 @@ partial class MainForm
         _btnAddMapping = new Button();
         _btnRemoveMapping = new Button();
         _btnConfigureMapping = new Button();
-        _btnFetchModels = new Button();
         _chkAutoStart = new CheckBox();
         _chkStartWithDashboard = new CheckBox();
         _chkCollectDetails = new CheckBox();
@@ -580,8 +579,8 @@ partial class MainForm
         _tlpSettings.Controls.Add(_chkStreamingHeartbeats, 0, 6);
         _tlpSettings.Controls.Add(_lblHeartbeatInterval, 0, 7);
         _tlpSettings.Controls.Add(_txtHeartbeatInterval, 1, 7);
+        _tlpSettings.SetColumnSpan(_lblMappings, 2);
         _tlpSettings.Controls.Add(_lblMappings, 0, 8);
-        _tlpSettings.Controls.Add(_btnFetchModels, 1, 8);
         _tlpSettings.SetColumnSpan(_dgvMappings, 2);
         _tlpSettings.Controls.Add(_dgvMappings, 0, 9);
         _tlpSettings.SetColumnSpan(_btnAddMapping, 1);
@@ -719,13 +718,6 @@ partial class MainForm
         _btnConfigureMapping.Name = "_btnConfigureMapping";
         _btnConfigureMapping.Text = "Configure Selected…";
         _btnConfigureMapping.Click += BtnConfigureMapping_Click;
-
-        _btnFetchModels.Anchor = AnchorStyles.Right;
-        _btnFetchModels.AutoSize = true;
-        _btnFetchModels.Margin = new Padding(4, 8, 4, 4);
-        _btnFetchModels.Name = "_btnFetchModels";
-        _btnFetchModels.Text = "Fetch Models ↓";
-        _btnFetchModels.Click += BtnFetchModels_Click;
 
         _btnSaveSettings.Anchor = AnchorStyles.Right;
         _btnSaveSettings.AutoSize = true;
@@ -1141,7 +1133,6 @@ partial class MainForm
     private Button _btnAddMapping;
     private Button _btnRemoveMapping;
     private Button _btnConfigureMapping;
-    private Button _btnFetchModels;
     private Button _btnSaveSettings;
     private CheckBox _chkAutoStart;
     private CheckBox _chkStartWithDashboard;
