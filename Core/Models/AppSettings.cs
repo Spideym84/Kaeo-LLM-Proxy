@@ -68,6 +68,24 @@ internal sealed class ModelMapping
     /// When specified, the instructions will be prepended to the conversation.
     /// </summary>
     public string? InstructionSetName { get; set; }
+
+    /// <summary>
+    /// When true, captured request bodies for this model are replaced with a redaction marker.
+    /// Global CollectRequestDetails must also be enabled for any request body to be stored.
+    /// </summary>
+    public bool RedactRequestBodies { get; set; } = true;
+
+    /// <summary>
+    /// When true, captured response bodies for this model are replaced with a redaction marker.
+    /// Global CollectResponseDetails must also be enabled for any response body to be stored.
+    /// </summary>
+    public bool RedactResponseBodies { get; set; } = true;
+
+    /// <summary>
+    /// When true, known sensitive JSON fields such as authorization, api keys, prompts, and messages are redacted.
+    /// Applies when body-level redaction is disabled but detail capture is enabled.
+    /// </summary>
+    public bool RedactSensitiveJsonFields { get; set; } = true;
 }
 
 /// <summary>Logging configuration persisted inside settings.jsonc.</summary>
@@ -339,10 +357,13 @@ internal sealed class AppSettings
         sb.AppendLine("  // EnableThinkingCompatibility strips assistant response-prefill turns for models that reject them when thinking is enabled.");
         sb.AppendLine("  // UpstreamTimeoutSeconds: defaults to 300 if not specified or zero.");
         sb.AppendLine("  // InstructionSetName: optional reference to an instruction set (defined below) to inject into requests.");
+        sb.AppendLine("  // RedactRequestBodies / RedactResponseBodies: replace captured request/response bodies with a redaction marker.");
+        sb.AppendLine("  // RedactSensitiveJsonFields: redacts API keys, authorization values, prompts, messages, and similar JSON fields.");
         sb.AppendLine("  // Example:");
         sb.AppendLine("  //   { \"OllamaName\": \"llama3\", \"LlamaCppName\": \"llama-3-8b\", \"EnableThinkingCompatibility\": true,");
         sb.AppendLine("  //     \"UpstreamUrl\": \"http://192.168.1.10:8080\", \"UpstreamTimeoutSeconds\": 120,");
-        sb.AppendLine("  //     \"InstructionSetName\": \"CodeExpert\" }");
+        sb.AppendLine("  //     \"InstructionSetName\": \"CodeExpert\", \"RedactRequestBodies\": true,");
+        sb.AppendLine("  //     \"RedactResponseBodies\": true, \"RedactSensitiveJsonFields\": true }");
         sb.AppendLine("  \"ModelMappings\": [],");
         sb.AppendLine();
         sb.AppendLine("  // ──── Instruction Sets ──────────────────────────────────────────────────────────────────────");

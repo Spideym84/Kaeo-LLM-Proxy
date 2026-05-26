@@ -12,6 +12,9 @@ namespace Kaeo.LlmProxy.Core.Services;
 /// </summary>
 internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService stats) : IDisposable
 {
+    private const string RedactedBodyText = "[REDACTED BY MODEL LOG REDACTION SETTINGS]";
+    private const string RedactedValueText = "[REDACTED]";
+
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -322,10 +325,10 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             {
                 string bodyText = await new System.IO.StreamReader(req.InputStream).ReadToEndAsync(ct);
                 log.RequestBytes = Encoding.UTF8.GetByteCount(bodyText);
-                if (_settings.CollectRequestDetails)
-                    log.RequestBody = bodyText;
                 string rewritten = NormalizeRequestBody(bodyText, log, ShouldApplyThinkingCompatibility);
                 originalModel = log.Model; // set by NormalizeRequestBody
+                if (_settings.CollectRequestDetails)
+                    log.RequestBody = RedactRequestBodyForLog(bodyText, originalModel);
                 byte[] bodyBytes = System.Text.Encoding.UTF8.GetBytes(rewritten);
                 upstreamReq.Content = new ByteArrayContent(bodyBytes);
                 upstreamReq.Content.Headers.TryAddWithoutValidation("Content-Type", "application/json");
@@ -396,7 +399,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
             byte[] responseBytes = buffer.ToArray();
             log.ResponseBytes = responseBytes.Length;
-            log.ResponseBody = Encoding.UTF8.GetString(responseBytes);
+            log.ResponseBody = RedactResponseBodyForLog(Encoding.UTF8.GetString(responseBytes), originalModel);
             await resp.OutputStream.WriteAsync(responseBytes, ct);
         }
         else
@@ -655,6 +658,98 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             : instructionSet.Instructions;
     }
 
+    private string RedactRequestBodyForLog(string body, string modelName)
+    {
+        ModelMapping? mapping = _settings.FindModelMapping(modelName);
+        if (mapping?.RedactRequestBodies ?? true)
+            return RedactedBodyText;
+
+        return mapping?.RedactSensitiveJsonFields ?? true
+            ? RedactSensitiveJsonFields(body)
+            : body;
+    }
+
+    private string RedactResponseBodyForLog(string body, string modelName)
+    {
+        ModelMapping? mapping = _settings.FindModelMapping(modelName);
+        if (mapping?.RedactResponseBodies ?? true)
+            return RedactedBodyText;
+
+        return mapping?.RedactSensitiveJsonFields ?? true
+            ? RedactSensitiveJsonFields(body)
+            : body;
+    }
+
+    private static string RedactSensitiveJsonFields(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+            return body;
+
+        try
+        {
+            using JsonDocument doc = JsonDocument.Parse(body);
+            using MemoryStream ms = new();
+            using Utf8JsonWriter writer = new(ms, new JsonWriterOptions { Indented = true });
+            WriteRedactedJsonElement(writer, doc.RootElement);
+            writer.Flush();
+            return Encoding.UTF8.GetString(ms.ToArray());
+        }
+        catch (JsonException)
+        {
+            return body;
+        }
+    }
+
+    private static void WriteRedactedJsonElement(Utf8JsonWriter writer, JsonElement element, string? propertyName = null)
+    {
+        if (propertyName is not null && IsSensitiveJsonProperty(propertyName))
+        {
+            writer.WriteStringValue(RedactedValueText);
+            return;
+        }
+
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                writer.WriteStartObject();
+                foreach (JsonProperty property in element.EnumerateObject())
+                {
+                    writer.WritePropertyName(property.Name);
+                    WriteRedactedJsonElement(writer, property.Value, property.Name);
+                }
+                writer.WriteEndObject();
+                break;
+
+            case JsonValueKind.Array:
+                writer.WriteStartArray();
+                foreach (JsonElement item in element.EnumerateArray())
+                    WriteRedactedJsonElement(writer, item, propertyName);
+                writer.WriteEndArray();
+                break;
+
+            default:
+                element.WriteTo(writer);
+                break;
+        }
+    }
+
+    private static bool IsSensitiveJsonProperty(string propertyName)
+    {
+        return propertyName.Equals("authorization", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Equals("api_key", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Equals("apikey", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Equals("apiKey", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Equals("access_token", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Equals("token", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Equals("secret", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Equals("password", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Equals("prompt", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Equals("system", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Equals("messages", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Equals("input", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Equals("content", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static bool IsAssistantResponsePrefill(LlamaCppMessage message) =>
         string.Equals(message.Role, "assistant", StringComparison.OrdinalIgnoreCase)
         && (message.ToolCalls is null || message.ToolCalls.Count == 0)
@@ -716,11 +811,11 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
     private async Task HandleShowAsync(HttpListenerRequest req, HttpListenerResponse resp, RequestLog log, CancellationToken ct)
     {
         string body = await ReadBodyAsync(req, ct);
-        if (_settings.CollectRequestDetails)
-            log.RequestBody = body;
         OllamaShowRequest? showReq = JsonSerializer.Deserialize<OllamaShowRequest>(body, _jsonOptions);
         string modelName = _settings.ResolveModelName(showReq?.Model ?? showReq?.Name ?? string.Empty);
         log.Model = modelName;
+        if (_settings.CollectRequestDetails)
+            log.RequestBody = RedactRequestBodyForLog(body, showReq?.Model ?? showReq?.Name ?? string.Empty);
 
         var (showBase, showTimeout) = ResolveUpstream(showReq?.Model ?? showReq?.Name ?? string.Empty);
         using var showReqMsg = new HttpRequestMessage(HttpMethod.Get, $"/v1/models/{Uri.EscapeDataString(modelName)}");
@@ -746,13 +841,13 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
     {
         string body = await ReadBodyAsync(req, ct);
         log.RequestBytes = Encoding.UTF8.GetByteCount(body);
-        if (_settings.CollectRequestDetails)
-            log.RequestBody = body;
         OllamaGenerateRequest? ollamaReq = JsonSerializer.Deserialize<OllamaGenerateRequest>(body, _jsonOptions);
         ArgumentNullException.ThrowIfNull(ollamaReq);
 
         string resolvedModel = _settings.ResolveModelName(ollamaReq.Model);
         log.Model = resolvedModel;
+        if (_settings.CollectRequestDetails)
+            log.RequestBody = RedactRequestBodyForLog(body, ollamaReq.Model);
         log.Streaming = ollamaReq.Stream;
         var (genBase, genTimeout) = ResolveUpstream(ollamaReq.Model);
 
@@ -813,7 +908,14 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             resp.ContentType = "application/x-ndjson";
             resp.SendChunked = true;
             resp.KeepAlive = true; // Keep connection alive during long thinking periods
-            await StreamCompletionToOllamaAsync(upstreamResp, resp, ollamaReq.Model, log, _settings.CollectResponseDetails, ct);
+            await StreamCompletionToOllamaAsync(
+                upstreamResp,
+                resp,
+                ollamaReq.Model,
+                log,
+                _settings.CollectResponseDetails,
+                responseText => RedactResponseBodyForLog(responseText, ollamaReq.Model),
+                ct);
         }
         else
         {
@@ -826,7 +928,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             log.ResponseBytes = Encoding.UTF8.GetByteCount(respBody);
 
             if (_settings.CollectResponseDetails)
-                log.ResponseBody = text;
+                log.ResponseBody = RedactResponseBodyForLog(text, ollamaReq.Model);
 
             var ollamaResp = new OllamaGenerateResponse
             {
@@ -849,13 +951,13 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
     {
         string body = await ReadBodyAsync(req, ct);
         log.RequestBytes = Encoding.UTF8.GetByteCount(body);
-        if (_settings.CollectRequestDetails)
-            log.RequestBody = body;
         OllamaChatRequest? ollamaReq = JsonSerializer.Deserialize<OllamaChatRequest>(body, _jsonOptions);
         ArgumentNullException.ThrowIfNull(ollamaReq);
 
         string resolvedModel = _settings.ResolveModelName(ollamaReq.Model);
         log.Model = resolvedModel;
+        if (_settings.CollectRequestDetails)
+            log.RequestBody = RedactRequestBodyForLog(body, ollamaReq.Model);
         log.Streaming = ollamaReq.Stream;
         var (chatBase, chatTimeout) = ResolveUpstream(ollamaReq.Model);
 
@@ -1002,6 +1104,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                     ollamaReq.Model,
                     log,
                     _settings.CollectResponseDetails,
+                    responseText => RedactResponseBodyForLog(responseText, ollamaReq.Model),
                     _settings.EnableStreamingHeartbeats,
                     _settings.StreamingHeartbeatIntervalSeconds,
                     ct);
@@ -1030,7 +1133,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                 }
 
                 if (_settings.CollectResponseDetails)
-                    log.ResponseBody = delta?.Content;
+                    log.ResponseBody = RedactResponseBodyForLog(delta?.Content ?? string.Empty, ollamaReq.Model);
 
                 var ollamaResp = new OllamaChatResponse
                 {
@@ -1062,13 +1165,13 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
     private async Task HandleEmbeddingsAsync(HttpListenerRequest req, HttpListenerResponse resp, RequestLog log, CancellationToken ct)
     {
         string body = await ReadBodyAsync(req, ct);
-        if (_settings.CollectRequestDetails)
-            log.RequestBody = body;
         OllamaEmbeddingsRequest? ollamaReq = JsonSerializer.Deserialize<OllamaEmbeddingsRequest>(body, _jsonOptions);
         ArgumentNullException.ThrowIfNull(ollamaReq);
 
         string resolvedModel = _settings.ResolveModelName(ollamaReq.Model);
         log.Model = resolvedModel;
+        if (_settings.CollectRequestDetails)
+            log.RequestBody = RedactRequestBodyForLog(body, ollamaReq.Model);
         var (embedBase, embedTimeout) = ResolveUpstream(ollamaReq.Model);
 
         // Resolve input: prefer new `input` (string or string[]), fall back to legacy `prompt`.
@@ -1129,6 +1232,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         string modelName,
         RequestLog log,
         bool collectResponse,
+        Func<string, string> redactResponse,
         CancellationToken ct)
     {
         await using Stream stream = await upstreamResp.Content.ReadAsStreamAsync(ct);
@@ -1195,7 +1299,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         }
 
         if (responseAccumulator is not null)
-            log.ResponseBody = responseAccumulator.ToString();
+            log.ResponseBody = redactResponse(responseAccumulator.ToString());
 
         log.ResponseBytes = responseBytes;
         resp.Close();
@@ -1210,6 +1314,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         string modelName,
         RequestLog log,
         bool collectResponse,
+        Func<string, string> redactResponse,
         bool enableHeartbeats,
         int heartbeatIntervalSeconds,
         CancellationToken ct)
@@ -1287,7 +1392,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         }
 
         if (responseAccumulator is not null)
-            log.ResponseBody = responseAccumulator.ToString();
+            log.ResponseBody = redactResponse(responseAccumulator.ToString());
 
         log.ResponseBytes = responseBytes;
         resp.Close();

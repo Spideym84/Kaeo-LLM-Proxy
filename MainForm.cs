@@ -481,7 +481,10 @@ internal partial class MainForm : Form
                 mapping.UpstreamUrl,
                 mapping.UpstreamTimeoutSeconds == 0 ? string.Empty : mapping.UpstreamTimeoutSeconds.ToString(),
                 mapping.UpstreamType.ToString(),
-                mapping.InstructionSetName ?? "(None)");
+                mapping.InstructionSetName ?? "(None)",
+                mapping.RedactRequestBodies,
+                mapping.RedactResponseBodies,
+                mapping.RedactSensitiveJsonFields);
 
             // The combo cell needs the item to exist before we can set a value.
             DataGridViewComboBoxCell cell =
@@ -595,6 +598,9 @@ internal partial class MainForm : Form
             string? timeoutStr  = row.Cells[4].Value?.ToString();
             string? upstreamStr = row.Cells[5].Value?.ToString();
             string? instructionSetName = row.Cells[6].Value?.ToString();
+            bool redactRequestBodies = row.Cells[7].Value as bool? ?? true;
+            bool redactResponseBodies = row.Cells[8].Value as bool? ?? true;
+            bool redactSensitiveJsonFields = row.Cells[9].Value as bool? ?? true;
 
             if (!string.IsNullOrWhiteSpace(ollamaName) && !string.IsNullOrWhiteSpace(llamaName))
             {
@@ -627,6 +633,9 @@ internal partial class MainForm : Form
                     UpstreamTimeoutSeconds = timeoutSec,
                     UpstreamType           = upstream,
                     InstructionSetName     = instructionSetName,
+                    RedactRequestBodies    = redactRequestBodies,
+                    RedactResponseBodies   = redactResponseBodies,
+                    RedactSensitiveJsonFields = redactSensitiveJsonFields,
                 });
             }
         }
@@ -648,8 +657,8 @@ internal partial class MainForm : Form
     private void BtnAddMapping_Click(object? sender, EventArgs e)
     {
         // Seed the llama.cpp combo with whatever models are already loaded.
-        // Columns: [0] OllamaName, [1] LlamaCppName, [2] ThinkingCompatibility, [3] UpstreamUrl, [4] Timeout, [5] UpstreamType, [6] InstructionSet
-        int idx = _dgvMappings.Rows.Add(string.Empty, string.Empty, true, string.Empty, string.Empty, "LlamaCpp", "(None)");
+        // Columns: [0] OllamaName, [1] LlamaCppName, [2] ThinkingCompatibility, [3] UpstreamUrl, [4] Timeout, [5] UpstreamType, [6] InstructionSet, [7-9] Redaction
+        int idx = _dgvMappings.Rows.Add(string.Empty, string.Empty, true, string.Empty, string.Empty, "LlamaCpp", "(None)", true, true, true);
 
         // Ensure the value is valid inside the combo items.
         DataGridViewComboBoxCell modelCell =

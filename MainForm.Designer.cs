@@ -96,6 +96,9 @@ partial class MainForm
         _colUpstreamTimeout = new DataGridViewTextBoxColumn();
         _colUpstreamType = new DataGridViewComboBoxColumn();
         _colInstructionSet = new DataGridViewComboBoxColumn();
+        _colRedactRequestBodies = new DataGridViewCheckBoxColumn();
+        _colRedactResponseBodies = new DataGridViewCheckBoxColumn();
+        _colRedactSensitiveJson = new DataGridViewCheckBoxColumn();
         _btnSaveSettings = new Button();
         _btnAddMapping = new Button();
         _btnRemoveMapping = new Button();
@@ -660,6 +663,9 @@ partial class MainForm
         _dgvMappings.Columns.Add(_colUpstreamTimeout);
         _dgvMappings.Columns.Add(_colUpstreamType);
         _dgvMappings.Columns.Add(_colInstructionSet);
+        _dgvMappings.Columns.Add(_colRedactRequestBodies);
+        _dgvMappings.Columns.Add(_colRedactResponseBodies);
+        _dgvMappings.Columns.Add(_colRedactSensitiveJson);
         _dgvMappings.Dock = DockStyle.Fill;
         _dgvMappings.Margin = new Padding(4, 4, 4, 4);
         _dgvMappings.MinimumSize = new Size(0, 120);
@@ -704,6 +710,24 @@ partial class MainForm
         _colInstructionSet.Name = "_colInstructionSet";
         _colInstructionSet.FillWeight = 100;
         _colInstructionSet.DefaultCellStyle.NullValue = "(None)";
+
+        _colRedactRequestBodies.HeaderText = "Redact Req";
+        _colRedactRequestBodies.Name = "_colRedactRequestBodies";
+        _colRedactRequestBodies.FillWeight = 60;
+        _colRedactRequestBodies.TrueValue = true;
+        _colRedactRequestBodies.FalseValue = false;
+
+        _colRedactResponseBodies.HeaderText = "Redact Resp";
+        _colRedactResponseBodies.Name = "_colRedactResponseBodies";
+        _colRedactResponseBodies.FillWeight = 60;
+        _colRedactResponseBodies.TrueValue = true;
+        _colRedactResponseBodies.FalseValue = false;
+
+        _colRedactSensitiveJson.HeaderText = "Redact JSON";
+        _colRedactSensitiveJson.Name = "_colRedactSensitiveJson";
+        _colRedactSensitiveJson.FillWeight = 60;
+        _colRedactSensitiveJson.TrueValue = true;
+        _colRedactSensitiveJson.FalseValue = false;
 
         _btnAddMapping.AutoSize = true;
         _btnAddMapping.Margin = new Padding(4, 8, 4, 4);
@@ -1137,6 +1161,9 @@ partial class MainForm
     private DataGridViewTextBoxColumn _colUpstreamTimeout;
     private DataGridViewComboBoxColumn _colUpstreamType;
     private DataGridViewComboBoxColumn _colInstructionSet;
+    private DataGridViewCheckBoxColumn _colRedactRequestBodies;
+    private DataGridViewCheckBoxColumn _colRedactResponseBodies;
+    private DataGridViewCheckBoxColumn _colRedactSensitiveJson;
     private Button _btnAddMapping;
     private Button _btnRemoveMapping;
     private Button _btnFetchModels;
