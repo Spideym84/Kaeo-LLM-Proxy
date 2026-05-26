@@ -938,8 +938,8 @@ partial class MainForm
         _tlpTestOuter.Name = "_tlpTestOuter";
         _tlpTestOuter.RowCount = 4;
         _tlpTestOuter.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        _tlpTestOuter.RowStyles.Add(new RowStyle(SizeType.Percent, 25F));
-        _tlpTestOuter.RowStyles.Add(new RowStyle(SizeType.Percent, 75F));
+        _tlpTestOuter.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _tlpTestOuter.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         _tlpTestOuter.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
         // _tlpTestTop — model label | combo | temp label | nud | Send | Cancel | Clear
@@ -1016,6 +1016,8 @@ partial class MainForm
         _txtTestPrompt.Name = "_txtTestPrompt";
         _txtTestPrompt.PlaceholderText = "Enter your prompt here…";
         _txtTestPrompt.ScrollBars = ScrollBars.Vertical;
+        _txtTestPrompt.Size = new Size(100, 66);
+        _txtTestPrompt.KeyDown += TxtTestPrompt_KeyDown;
 
         _txtTestResponse.BackColor = SystemColors.Window;
         _txtTestResponse.Dock = DockStyle.Fill;

@@ -1155,17 +1155,18 @@ internal partial class MainForm : Form
         };
 
         var responseBuilder = new StringBuilder();
+        bool hasThinkingOutput = false;
+        bool hasAnswerOutput = false;
         Exception? capturedException = null;
         var sw = System.Diagnostics.Stopwatch.StartNew();
         int tokenCount = 0;
 
         try
         {
-            await foreach (string token in StreamChatAsync(model, upstreamUrl, mapping, requestBody, ct))
+            await foreach (TestConsoleToken token in StreamChatAsync(model, upstreamUrl, mapping, requestBody, ct))
             {
                 tokenCount++;
-                responseBuilder.Append(token);
-                _txtTestResponse.AppendText(token);
+                AppendTestConsoleToken(token, responseBuilder, ref hasThinkingOutput, ref hasAnswerOutput);
             }
 
             sw.Stop();
@@ -1209,6 +1210,53 @@ internal partial class MainForm : Form
         }
     }
 
+    private void TxtTestPrompt_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.KeyCode != Keys.Enter || e.Shift)
+            return;
+
+        e.SuppressKeyPress = true;
+
+        if (_btnTestSend.Enabled)
+            BtnTestSend_Click(_btnTestSend, EventArgs.Empty);
+    }
+
+    private void AppendTestConsoleToken(
+        TestConsoleToken token,
+        StringBuilder responseBuilder,
+        ref bool hasThinkingOutput,
+        ref bool hasAnswerOutput)
+    {
+        if (token.IsThinking)
+        {
+            if (!hasThinkingOutput)
+            {
+                AppendTestConsoleText("[Thinking]\r\n");
+                responseBuilder.Append("[Thinking]\r\n");
+                hasThinkingOutput = true;
+            }
+
+            AppendTestConsoleText(token.Text);
+            responseBuilder.Append(token.Text);
+            return;
+        }
+
+        if (hasThinkingOutput && !hasAnswerOutput)
+        {
+            AppendTestConsoleText("\r\n\r\n[Answer]\r\n");
+            responseBuilder.Append("\r\n\r\n[Answer]\r\n");
+        }
+
+        hasAnswerOutput = true;
+        AppendTestConsoleText(token.Text);
+        responseBuilder.Append(token.Text);
+    }
+
+    private void AppendTestConsoleText(string text)
+    {
+        _txtTestResponse.AppendText(text);
+    }
+
     private void BtnTestCancel_Click(object? sender, EventArgs e)
     {
         if (_testSendCts is { IsCancellationRequested: false })
@@ -1239,13 +1287,13 @@ internal partial class MainForm : Form
     /// Streams tokens from the upstream /v1/chat/completions endpoint using SSE,
     /// yielding each content delta as it arrives.
     /// </summary>
-    private async IAsyncEnumerable<string> StreamChatAsync(
+    private async IAsyncEnumerable<TestConsoleToken> StreamChatAsync(
         string model, string? upstreamUrl, ModelMapping? mapping, string requestBodyJson,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(upstreamUrl))
         {
-            yield return "[ERROR: No upstream URL configured for this model]";
+            yield return new TestConsoleToken("[ERROR: No upstream URL configured for this model]", IsThinking: false);
             yield break;
         }
 
@@ -1307,14 +1355,18 @@ internal partial class MainForm : Form
                 // visible response box shows the assistant message instead of raw JSON.
                 string body = await resp.Content.ReadAsStringAsync(requestCts.Token);
 
-                string? extracted = TryExtractNonStreamingContent(body);
-                if (!string.IsNullOrEmpty(extracted))
+                List<TestConsoleToken>? extracted = TryExtractNonStreamingTokens(body);
+                if (extracted is { Count: > 0 })
                 {
-                    yield return extracted;
+                    foreach (TestConsoleToken token in extracted)
+                        yield return token;
+
                     yield break;
                 }
 
-                yield return $"[Upstream returned non-streaming {contentType ?? "response"}]\r\n{body}";
+                yield return new TestConsoleToken(
+                    $"[Upstream returned non-streaming {contentType ?? "response"}]\r\n{body}",
+                    IsThinking: false);
                 yield break;
             }
 
@@ -1387,13 +1439,13 @@ internal partial class MainForm : Form
                     {
                         string? rt = rc.GetString();
                         if (!string.IsNullOrEmpty(rt))
-                            yield return rt;
+                            yield return new TestConsoleToken(rt, IsThinking: true);
                     }
                     else if (delta.TryGetProperty("reasoning", out JsonElement r))
                     {
                         string? rt = r.GetString();
                         if (!string.IsNullOrEmpty(rt))
-                            yield return rt;
+                            yield return new TestConsoleToken(rt, IsThinking: true);
                     }
 
                     if (delta.TryGetProperty("content", out JsonElement content))
@@ -1401,7 +1453,7 @@ internal partial class MainForm : Form
                         string? text = content.GetString();
 
                         if (!string.IsNullOrEmpty(text))
-                            yield return text;
+                            yield return new TestConsoleToken(text, IsThinking: false);
                     }
                 }
             }
@@ -1416,11 +1468,10 @@ internal partial class MainForm : Form
     }
 
     /// <summary>
-    /// Attempts to extract the assistant message text from a non-streaming
-    /// /v1/chat/completions response body. Returns null if the JSON doesn't
-    /// match that shape.
+    /// Attempts to extract assistant thinking and answer text from a non-streaming
+    /// /v1/chat/completions response body. Returns null if the JSON doesn't match that shape.
     /// </summary>
-    private static string? TryExtractNonStreamingContent(string body)
+    private static List<TestConsoleToken>? TryExtractNonStreamingTokens(string body)
     {
         if (string.IsNullOrWhiteSpace(body))
             return null;
@@ -1438,7 +1489,7 @@ internal partial class MainForm : Form
                 return null;
             }
 
-            var sb = new StringBuilder();
+            List<TestConsoleToken> tokens = [];
             foreach (JsonElement choice in choices.EnumerateArray())
             {
                 if (!choice.TryGetProperty("message", out JsonElement message))
@@ -1448,18 +1499,27 @@ internal partial class MainForm : Form
                 {
                     string? rt = rc.GetString();
                     if (!string.IsNullOrEmpty(rt))
-                        sb.Append(rt);
+                        tokens.Add(new TestConsoleToken(rt, IsThinking: true));
+                }
+
+                if (message.TryGetProperty("reasoning", out JsonElement r))
+                {
+                    string? rt = r.GetString();
+                    if (!string.IsNullOrEmpty(rt))
+                        tokens.Add(new TestConsoleToken(rt, IsThinking: true));
                 }
 
                 if (message.TryGetProperty("content", out JsonElement content))
                 {
                     string? text = content.GetString();
                     if (!string.IsNullOrEmpty(text))
-                        sb.Append(text);
+                        tokens.Add(new TestConsoleToken(text, IsThinking: false));
                 }
             }
 
-            return sb.Length > 0 ? sb.ToString() : null;
+            return tokens.Count > 0 ? tokens : null;
         }
     }
+
+    private readonly record struct TestConsoleToken(string Text, bool IsThinking);
 }
