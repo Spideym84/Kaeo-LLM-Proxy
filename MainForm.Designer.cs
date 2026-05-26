@@ -143,6 +143,7 @@ partial class MainForm
         _lblTestTemp = new Label();
         _nudTestTemp = new NumericUpDown();
         _btnTestSend = new Button();
+        _btnTestCancel = new Button();
         _btnTestClear = new Button();
         _txtTestPrompt = new TextBox();
         _txtTestResponse = new TextBox();
@@ -929,12 +930,13 @@ partial class MainForm
         _tlpTestOuter.RowStyles.Add(new RowStyle(SizeType.Percent, 75F));
         _tlpTestOuter.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-        // _tlpTestTop — model label | combo | temp label | nud | Send | Clear
+        // _tlpTestTop — model label | combo | temp label | nud | Send | Cancel | Clear
         _tlpTestTop.AutoSize = true;
         _tlpTestTop.AutoSizeMode = AutoSizeMode.GrowOnly;
-        _tlpTestTop.ColumnCount = 6;
+        _tlpTestTop.ColumnCount = 7;
         _tlpTestTop.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         _tlpTestTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        _tlpTestTop.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         _tlpTestTop.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         _tlpTestTop.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         _tlpTestTop.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -944,7 +946,8 @@ partial class MainForm
         _tlpTestTop.Controls.Add(_lblTestTemp, 2, 0);
         _tlpTestTop.Controls.Add(_nudTestTemp, 3, 0);
         _tlpTestTop.Controls.Add(_btnTestSend, 4, 0);
-        _tlpTestTop.Controls.Add(_btnTestClear, 5, 0);
+        _tlpTestTop.Controls.Add(_btnTestCancel, 5, 0);
+        _tlpTestTop.Controls.Add(_btnTestClear, 6, 0);
         _tlpTestTop.Dock = DockStyle.Fill;
         _tlpTestTop.Margin = new Padding(0, 0, 0, 6);
         _tlpTestTop.Name = "_tlpTestTop";
@@ -982,6 +985,13 @@ partial class MainForm
         _btnTestSend.Text = "Send";
         _btnTestSend.Click += BtnTestSend_Click;
 
+        _btnTestCancel.Margin = new Padding(0, 2, 4, 2);
+        _btnTestCancel.Name = "_btnTestCancel";
+        _btnTestCancel.Size = new Size(80, 28);
+        _btnTestCancel.Text = "Cancel";
+        _btnTestCancel.Enabled = false;
+        _btnTestCancel.Click += BtnTestCancel_Click;
+
         _btnTestClear.Margin = new Padding(0, 2, 0, 2);
         _btnTestClear.Name = "_btnTestClear";
         _btnTestClear.Size = new Size(80, 28);
@@ -1002,8 +1012,8 @@ partial class MainForm
         _txtTestResponse.Multiline = true;
         _txtTestResponse.Name = "_txtTestResponse";
         _txtTestResponse.ReadOnly = true;
-        _txtTestResponse.ScrollBars = ScrollBars.Both;
-        _txtTestResponse.WordWrap = false;
+        _txtTestResponse.ScrollBars = ScrollBars.Vertical;
+        _txtTestResponse.WordWrap = true;
 
         _lblTestStatus.AutoSize = true;
         _lblTestStatus.Dock = DockStyle.Fill;
@@ -1175,6 +1185,7 @@ partial class MainForm
     private Label _lblTestTemp;
     private NumericUpDown _nudTestTemp;
     private Button _btnTestSend;
+    private Button _btnTestCancel;
     private Button _btnTestClear;
     private TextBox _txtTestPrompt;
     private TextBox _txtTestResponse;

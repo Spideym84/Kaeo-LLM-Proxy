@@ -953,6 +953,7 @@ internal partial class MainForm : Form
 
     /// <summary>Populates the test console model combo from the upstream.</summary>
     private readonly Dictionary<string, string> _testModelToUpstream = new(StringComparer.OrdinalIgnoreCase);
+    private CancellationTokenSource? _testSendCts;
 
     private async Task LoadTestModelsAsync()
     {
@@ -1031,8 +1032,13 @@ internal partial class MainForm : Form
         }
 
         _btnTestSend.Enabled = false;
+        _btnTestCancel.Enabled = true;
         _lblTestStatus.Text = "Sending\u2026";
         _txtTestResponse.Clear();
+
+        _testSendCts?.Dispose();
+        _testSendCts = new CancellationTokenSource();
+        CancellationToken ct = _testSendCts.Token;
 
         try
         {
@@ -1040,7 +1046,7 @@ internal partial class MainForm : Form
             var sw = System.Diagnostics.Stopwatch.StartNew();
             int tokenCount = 0;
 
-            await foreach (string token in StreamChatAsync(model, prompt, temperature))
+            await foreach (string token in StreamChatAsync(model, prompt, temperature, ct))
             {
                 tokenCount++;
                 _txtTestResponse.AppendText(token);
@@ -1062,6 +1068,18 @@ internal partial class MainForm : Form
         finally
         {
             _btnTestSend.Enabled = true;
+            _btnTestCancel.Enabled = false;
+            _testSendCts?.Dispose();
+            _testSendCts = null;
+        }
+    }
+
+    private void BtnTestCancel_Click(object? sender, EventArgs e)
+    {
+        if (_testSendCts is { IsCancellationRequested: false })
+        {
+            _lblTestStatus.Text = "Cancelling\u2026";
+            _testSendCts.Cancel();
         }
     }
 
