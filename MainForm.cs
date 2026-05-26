@@ -1558,6 +1558,9 @@ internal partial class MainForm : Form
                 {
                     JsonElement root = parsed.RootElement;
 
+                    if (TryExtractSseError(root, out string errorMessage))
+                        throw new InvalidOperationException($"Upstream stream error: {errorMessage}");
+
                     if (!root.TryGetProperty("choices", out JsonElement choices))
                     {
                         foreach (TestConsoleToken token in ExtractTokensFromElement(root))
@@ -1670,6 +1673,47 @@ internal partial class MainForm : Form
             document = null;
             return false;
         }
+    }
+
+    private static bool TryExtractSseError(JsonElement root, out string message)
+    {
+        message = string.Empty;
+
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("error", out JsonElement error))
+            return false;
+
+        if (error.ValueKind == JsonValueKind.String)
+        {
+            message = error.GetString() ?? string.Empty;
+            return !string.IsNullOrWhiteSpace(message);
+        }
+
+        if (error.ValueKind != JsonValueKind.Object)
+        {
+            message = error.ToString();
+            return !string.IsNullOrWhiteSpace(message);
+        }
+
+        string? code = error.TryGetProperty("code", out JsonElement codeElement)
+            ? codeElement.ToString()
+            : null;
+        string? type = error.TryGetProperty("type", out JsonElement typeElement)
+            ? typeElement.ToString()
+            : null;
+        string? detail = error.TryGetProperty("message", out JsonElement messageElement)
+            ? messageElement.GetString()
+            : error.ToString();
+
+        List<string> parts = [];
+        if (!string.IsNullOrWhiteSpace(code))
+            parts.Add($"code={code}");
+        if (!string.IsNullOrWhiteSpace(type))
+            parts.Add($"type={type}");
+        if (!string.IsNullOrWhiteSpace(detail))
+            parts.Add(detail);
+
+        message = parts.Count == 0 ? error.ToString() : string.Join("; ", parts);
+        return !string.IsNullOrWhiteSpace(message);
     }
 
     private void BtnTestClear_Click(object? sender, EventArgs e)
