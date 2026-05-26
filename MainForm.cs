@@ -952,6 +952,8 @@ internal partial class MainForm : Form
     }
 
     /// <summary>Populates the test console model combo from the upstream.</summary>
+    private readonly Dictionary<string, string> _testModelToUpstream = new(StringComparer.OrdinalIgnoreCase);
+
     private async Task LoadTestModelsAsync()
     {
         _lblTestStatus.Text = "Loading models…";
@@ -966,6 +968,7 @@ internal partial class MainForm : Form
                 .ToList();
 
             _cmbTestModel.Items.Clear();
+            _testModelToUpstream.Clear();
 
             if (upstreamUrls.Count == 0)
             {
@@ -982,7 +985,10 @@ internal partial class MainForm : Form
             {
                 List<string> models = await ModelMappingDialog.FetchUpstreamModelsAsync(url);
                 foreach (string model in models)
-                    allModels.Add(model);
+                {
+                    if (allModels.Add(model))
+                        _testModelToUpstream[model] = url;
+                }
             }
 
             if (allModels.Count == 0)
@@ -1061,22 +1067,27 @@ internal partial class MainForm : Form
         string model, string prompt, double temperature,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        // Find the mapping for this model to get the correct upstream URL
-        var mapping = _settings.ModelMappings.FirstOrDefault(m =>
+        // Prefer the upstream we actually discovered this model on. Fall back to any
+        // configured mapping that names the same proxy/model identifier.
+        string? upstreamUrl = _testModelToUpstream.TryGetValue(model, out string? url) ? url : null;
+        ModelMapping? mapping = _settings.ModelMappings.FirstOrDefault(m =>
             string.Equals(m.ProxyName, model, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(m.ModelName, model, StringComparison.OrdinalIgnoreCase));
 
-        if (mapping is null || string.IsNullOrWhiteSpace(mapping.UpstreamUrl))
+        if (string.IsNullOrWhiteSpace(upstreamUrl))
+            upstreamUrl = mapping?.UpstreamUrl;
+
+        if (string.IsNullOrWhiteSpace(upstreamUrl))
         {
             yield return "[ERROR: No upstream URL configured for this model]";
             yield break;
         }
 
-        int timeout = mapping.UpstreamTimeoutSeconds > 0 ? mapping.UpstreamTimeoutSeconds : 300;
+        int timeout = mapping is { UpstreamTimeoutSeconds: > 0 } ? mapping.UpstreamTimeoutSeconds : 300;
 
         using var client = new HttpClient
         {
-            BaseAddress = new Uri(mapping.UpstreamUrl),
+            BaseAddress = new Uri(upstreamUrl),
             Timeout = TimeSpan.FromSeconds(timeout),
         };
 
