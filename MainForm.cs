@@ -812,8 +812,7 @@ internal partial class MainForm : Form
     private void RefreshInstructionDropdowns()
     {
         // Update the instruction set dropdown in the model mappings grid
-        DataGridViewComboBoxColumn? col = _dgvMappings.Columns[6] as DataGridViewComboBoxColumn;
-        if (col is null)
+        if (_dgvMappings.Columns[6] is not DataGridViewComboBoxColumn col)
             return;
 
         col.Items.Clear();
@@ -860,8 +859,7 @@ internal partial class MainForm : Form
         if (_lstInstructions.SelectedItems.Count == 0)
             return;
 
-        InstructionSet? existing = _lstInstructions.SelectedItems[0].Tag as InstructionSet;
-        if (existing is null)
+        if (_lstInstructions.SelectedItems[0].Tag is not InstructionSet existing)
             return;
 
         InstructionSet? edited = InstructionSetDialog.ShowAddEditDialog(this, existing);
@@ -892,8 +890,7 @@ internal partial class MainForm : Form
         if (_lstInstructions.SelectedItems.Count == 0)
             return;
 
-        InstructionSet? toRemove = _lstInstructions.SelectedItems[0].Tag as InstructionSet;
-        if (toRemove is null)
+        if (_lstInstructions.SelectedItems[0].Tag is not InstructionSet toRemove)
             return;
 
         DialogResult result = MessageBox.Show(

@@ -1467,7 +1467,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
         public override async Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken ct)
         {
-            await inner.WriteAsync(buffer, offset, count, ct);
+            await inner.WriteAsync(buffer.AsMemory(offset, count), ct);
             BytesWritten += count;
         }
 
