@@ -182,6 +182,17 @@ internal sealed class AppSettings
         false;
 #endif
 
+    /// <summary>
+    /// When true, streaming responses emit harmless heartbeat frames while waiting for long-thinking models.
+    /// Helps clients keep connections open when no model tokens are available yet. Default: true.
+    /// </summary>
+    public bool EnableStreamingHeartbeats { get; set; } = true;
+
+    /// <summary>
+    /// Seconds between streaming heartbeat frames while waiting for upstream tokens. Min: 5, Max: 300. Default: 15.
+    /// </summary>
+    public int StreamingHeartbeatIntervalSeconds { get; set; } = 15;
+
     /// <summary>Logging configuration.</summary>
     public LoggingSettings Logging { get; set; } = new();
 
@@ -313,6 +324,14 @@ internal sealed class AppSettings
         sb.AppendLine("  // For streaming responses, accumulates all chunks into a single string.");
         sb.AppendLine("  // Increases memory and DB storage usage. Default: false");
         sb.AppendLine($"  \"CollectResponseDetails\": {JsBool(CollectResponseDetails)},");
+        sb.AppendLine();
+        sb.AppendLine("  // Emit harmless heartbeat frames for streaming requests while long-thinking models are not producing tokens.");
+        sb.AppendLine("  // Helps clients avoid idle timeouts during extended reasoning. Default: true");
+        sb.AppendLine($"  \"EnableStreamingHeartbeats\": {JsBool(EnableStreamingHeartbeats)},");
+        sb.AppendLine();
+        sb.AppendLine("  // Seconds between heartbeat frames while waiting for upstream streaming data.");
+        sb.AppendLine("  // Min: 5  Max: 300  Default: 15");
+        sb.AppendLine($"  \"StreamingHeartbeatIntervalSeconds\": {StreamingHeartbeatIntervalSeconds},");
         sb.AppendLine();
         sb.AppendLine("  // \u2500\u2500\u2500 Model Name Mappings \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
         sb.AppendLine("  // Each entry maps an Ollama model name to a specific upstream server and llama.cpp model.");

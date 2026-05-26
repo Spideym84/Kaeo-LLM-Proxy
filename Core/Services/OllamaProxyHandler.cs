@@ -359,6 +359,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         }
 
         resp.SendChunked = true;
+        resp.KeepAlive = true;
 
         if (!upstreamResp.IsSuccessStatusCode)
         {
@@ -374,10 +375,25 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
         await using Stream upstreamStream = await upstreamResp.Content.ReadAsStreamAsync(ct);
 
+        bool isServerSentEvents = IsServerSentEventsResponse(upstreamResp);
+
         if (_settings.CollectResponseDetails)
         {
-            using var buffer = new MemoryStream();
-            await upstreamStream.CopyToAsync(buffer, ct);
+            using MemoryStream buffer = new();
+            if (isServerSentEvents)
+            {
+                await CopyStreamWithSseHeartbeatsAsync(
+                    upstreamStream,
+                    buffer,
+                    _settings.EnableStreamingHeartbeats,
+                    _settings.StreamingHeartbeatIntervalSeconds,
+                    ct);
+            }
+            else
+            {
+                await upstreamStream.CopyToAsync(buffer, ct);
+            }
+
             byte[] responseBytes = buffer.ToArray();
             log.ResponseBytes = responseBytes.Length;
             log.ResponseBody = Encoding.UTF8.GetString(responseBytes);
@@ -385,14 +401,73 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         }
         else
         {
-            using var countingStream = new CountingStream(resp.OutputStream);
-            await upstreamStream.CopyToAsync(countingStream, ct);
+            using CountingStream countingStream = new(resp.OutputStream);
+            if (isServerSentEvents)
+            {
+                await CopyStreamWithSseHeartbeatsAsync(
+                    upstreamStream,
+                    countingStream,
+                    _settings.EnableStreamingHeartbeats,
+                    _settings.StreamingHeartbeatIntervalSeconds,
+                    ct);
+            }
+            else
+            {
+                await upstreamStream.CopyToAsync(countingStream, ct);
+            }
+
             log.ResponseBytes = countingStream.BytesWritten;
         }
 
         resp.OutputStream.Close();
 
         log.Status = RequestStatus.Success;
+    }
+
+    private static bool IsServerSentEventsResponse(HttpResponseMessage response)
+    {
+        string? mediaType = response.Content.Headers.ContentType?.MediaType;
+        if (mediaType?.Equals("text/event-stream", StringComparison.OrdinalIgnoreCase) == true)
+            return true;
+
+        return response.Headers.TryGetValues("X-Accel-Buffering", out IEnumerable<string>? values)
+            && values.Any(value => value.Equals("no", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static async Task CopyStreamWithSseHeartbeatsAsync(
+        Stream source,
+        Stream destination,
+        bool enableHeartbeats,
+        int heartbeatIntervalSeconds,
+        CancellationToken ct)
+    {
+        byte[] buffer = new byte[81920];
+        byte[] heartbeatBytes = Encoding.UTF8.GetBytes(": kaeo-heartbeat\n\n");
+        TimeSpan heartbeatInterval = TimeSpan.FromSeconds(Math.Clamp(heartbeatIntervalSeconds, 5, 300));
+
+        while (!ct.IsCancellationRequested)
+        {
+            ValueTask<int> readValueTask = source.ReadAsync(buffer, ct);
+            Task<int> readTask = readValueTask.AsTask();
+
+            while (enableHeartbeats && !readTask.IsCompleted)
+            {
+                Task delayTask = Task.Delay(heartbeatInterval, ct);
+                Task completed = await Task.WhenAny(readTask, delayTask);
+                if (completed == readTask)
+                    break;
+
+                await destination.WriteAsync(heartbeatBytes, ct);
+                await destination.FlushAsync(ct);
+            }
+
+            int bytesRead = await readTask;
+            if (bytesRead == 0)
+                break;
+
+            await destination.WriteAsync(buffer.AsMemory(0, bytesRead), ct);
+            await destination.FlushAsync(ct);
+        }
     }
 
     /// <summary>
@@ -905,7 +980,15 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                 if (retryCount > 0)
                     await WriteContextSummarizedNoticeAsync(resp, ollamaReq.Model, originalMessageCount, messages.Count, ct);
 
-                await StreamChatToOllamaAsync(upstreamResp, resp, ollamaReq.Model, log, _settings.CollectResponseDetails, ct);
+                await StreamChatToOllamaAsync(
+                    upstreamResp,
+                    resp,
+                    ollamaReq.Model,
+                    log,
+                    _settings.CollectResponseDetails,
+                    _settings.EnableStreamingHeartbeats,
+                    _settings.StreamingHeartbeatIntervalSeconds,
+                    ct);
             }
             else
             {
@@ -1111,6 +1194,8 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         string modelName,
         RequestLog log,
         bool collectResponse,
+        bool enableHeartbeats,
+        int heartbeatIntervalSeconds,
         CancellationToken ct)
     {
         await using Stream stream = await upstreamResp.Content.ReadAsStreamAsync(ct);
@@ -1120,10 +1205,17 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         var responseAccumulator = collectResponse ? new StringBuilder() : null;
         bool reachedDone = false;
         long responseBytes = 0;
+        TimeSpan heartbeatInterval = TimeSpan.FromSeconds(Math.Clamp(heartbeatIntervalSeconds, 5, 300));
 
         while (!ct.IsCancellationRequested)
         {
-            string? line = await reader.ReadLineAsync(ct);
+            string? line = await ReadLineWithOllamaChatHeartbeatsAsync(
+                reader,
+                writer,
+                modelName,
+                enableHeartbeats,
+                heartbeatInterval,
+                ct);
             if (line is null) break;          // end of stream
             if (string.IsNullOrWhiteSpace(line)) continue;
 
@@ -1186,6 +1278,37 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         log.Status = ct.IsCancellationRequested && !reachedDone
             ? RequestStatus.Cancelled
             : RequestStatus.Success;
+    }
+
+    private static async Task<string?> ReadLineWithOllamaChatHeartbeatsAsync(
+        StreamReader reader,
+        StreamWriter writer,
+        string modelName,
+        bool enableHeartbeats,
+        TimeSpan heartbeatInterval,
+        CancellationToken ct)
+    {
+        Task<string?> readTask = reader.ReadLineAsync(ct).AsTask();
+
+        while (enableHeartbeats && !readTask.IsCompleted)
+        {
+            Task delayTask = Task.Delay(heartbeatInterval, ct);
+            Task completed = await Task.WhenAny(readTask, delayTask);
+            if (completed == readTask)
+                break;
+
+            var heartbeatChunk = new OllamaChatResponse
+            {
+                Model = modelName,
+                Message = new OllamaMessage("assistant", string.Empty),
+                Done = false,
+            };
+
+            await writer.WriteLineAsync(JsonSerializer.Serialize(heartbeatChunk, _jsonOptions));
+            await writer.FlushAsync(ct);
+        }
+
+        return await readTask;
     }
 
     // ── Mapping helpers ──────────────────────────────────────────────────────

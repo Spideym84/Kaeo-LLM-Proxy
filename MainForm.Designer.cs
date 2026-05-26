@@ -104,6 +104,9 @@ partial class MainForm
         _chkStartWithDashboard = new CheckBox();
         _chkCollectDetails = new CheckBox();
         _chkCollectResponseDetails = new CheckBox();
+        _chkStreamingHeartbeats = new CheckBox();
+        _lblHeartbeatInterval = new Label();
+        _txtHeartbeatInterval = new TextBox();
 
         _grpLogging = new GroupBox();
         _tlpLogging = new TableLayoutPanel();
@@ -558,7 +561,7 @@ partial class MainForm
         _tlpSettings.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         _tlpSettings.Location = new Point(8, 8);
         _tlpSettings.Name = "_tlpSettings";
-        _tlpSettings.RowCount = 8;
+        _tlpSettings.RowCount = 12;
         _tlpSettings.Size = new Size(660, 420);
 
         _tlpSettings.Controls.Add(_lblListenPort, 0, 0);
@@ -573,15 +576,19 @@ partial class MainForm
         _tlpSettings.Controls.Add(_chkCollectDetails, 0, 4);
         _tlpSettings.SetColumnSpan(_chkCollectResponseDetails, 2);
         _tlpSettings.Controls.Add(_chkCollectResponseDetails, 0, 5);
-        _tlpSettings.Controls.Add(_lblMappings, 0, 6);
-        _tlpSettings.Controls.Add(_btnFetchModels, 1, 6);
+        _tlpSettings.SetColumnSpan(_chkStreamingHeartbeats, 2);
+        _tlpSettings.Controls.Add(_chkStreamingHeartbeats, 0, 6);
+        _tlpSettings.Controls.Add(_lblHeartbeatInterval, 0, 7);
+        _tlpSettings.Controls.Add(_txtHeartbeatInterval, 1, 7);
+        _tlpSettings.Controls.Add(_lblMappings, 0, 8);
+        _tlpSettings.Controls.Add(_btnFetchModels, 1, 8);
         _tlpSettings.SetColumnSpan(_dgvMappings, 2);
-        _tlpSettings.Controls.Add(_dgvMappings, 0, 7);
+        _tlpSettings.Controls.Add(_dgvMappings, 0, 9);
         _tlpSettings.SetColumnSpan(_btnAddMapping, 1);
-        _tlpSettings.Controls.Add(_btnAddMapping, 0, 8);
-        _tlpSettings.Controls.Add(_btnRemoveMapping, 1, 8);
+        _tlpSettings.Controls.Add(_btnAddMapping, 0, 10);
+        _tlpSettings.Controls.Add(_btnRemoveMapping, 1, 10);
         _tlpSettings.SetColumnSpan(_btnSaveSettings, 2);
-        _tlpSettings.Controls.Add(_btnSaveSettings, 0, 9);
+        _tlpSettings.Controls.Add(_btnSaveSettings, 0, 11);
 
         _lblListenPort.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         _lblListenPort.AutoSize = true;
@@ -622,6 +629,21 @@ partial class MainForm
         _chkCollectResponseDetails.Margin = new Padding(4, 4, 4, 8);
         _chkCollectResponseDetails.Name = "_chkCollectResponseDetails";
         _chkCollectResponseDetails.Text = "Collect response details (captures LLM response text into each log entry)";
+
+        _chkStreamingHeartbeats.AutoSize = true;
+        _chkStreamingHeartbeats.Margin = new Padding(4, 4, 4, 4);
+        _chkStreamingHeartbeats.Name = "_chkStreamingHeartbeats";
+        _chkStreamingHeartbeats.Text = "Enable streaming heartbeats for long-thinking models";
+
+        _lblHeartbeatInterval.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblHeartbeatInterval.AutoSize = true;
+        _lblHeartbeatInterval.Margin = new Padding(4, 8, 8, 4);
+        _lblHeartbeatInterval.Name = "_lblHeartbeatInterval";
+        _lblHeartbeatInterval.Text = "Heartbeat Interval (seconds):";
+
+        _txtHeartbeatInterval.Dock = DockStyle.Fill;
+        _txtHeartbeatInterval.Margin = new Padding(4, 6, 4, 8);
+        _txtHeartbeatInterval.Name = "_txtHeartbeatInterval";
 
         _lblMappings.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         _lblMappings.AutoSize = true;
@@ -1123,6 +1145,9 @@ partial class MainForm
     private CheckBox _chkStartWithDashboard;
     private CheckBox _chkCollectDetails;
     private CheckBox _chkCollectResponseDetails;
+    private CheckBox _chkStreamingHeartbeats;
+    private Label _lblHeartbeatInterval;
+    private TextBox _txtHeartbeatInterval;
     private System.Windows.Forms.Timer _refreshTimer;
     private Button _btnRefreshLogs;
     private Button _btnLogDetails;

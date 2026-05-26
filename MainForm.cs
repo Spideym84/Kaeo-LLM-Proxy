@@ -468,6 +468,8 @@ internal partial class MainForm : Form
         _chkStartWithDashboard.Checked = _settings.StartWithDashboardOpen;
         _chkCollectDetails.Checked = _settings.CollectRequestDetails;
         _chkCollectResponseDetails.Checked = _settings.CollectResponseDetails;
+        _chkStreamingHeartbeats.Checked = _settings.EnableStreamingHeartbeats;
+        _txtHeartbeatInterval.Text = _settings.StreamingHeartbeatIntervalSeconds.ToString();
 
         _dgvMappings.Rows.Clear();
         foreach (ModelMapping mapping in _settings.ModelMappings)
@@ -558,12 +560,23 @@ internal partial class MainForm : Form
             return;
         }
 
+        if (!int.TryParse(_txtHeartbeatInterval.Text, out int heartbeatIntervalSeconds)
+            || heartbeatIntervalSeconds < 5
+            || heartbeatIntervalSeconds > 300)
+        {
+            MessageBox.Show("Heartbeat interval must be a number between 5 and 300 seconds.", "Validation",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
         _settings.ListenPort = port;
         _settings.MaxLogEntries = maxLogs;
         _settings.AutoStartProxy = _chkAutoStart.Checked;
         _settings.StartWithDashboardOpen = _chkStartWithDashboard.Checked;
         _settings.CollectRequestDetails = _chkCollectDetails.Checked;
         _settings.CollectResponseDetails = _chkCollectResponseDetails.Checked;
+        _settings.EnableStreamingHeartbeats = _chkStreamingHeartbeats.Checked;
+        _settings.StreamingHeartbeatIntervalSeconds = heartbeatIntervalSeconds;
 
         _settings.Logging.LogDirectory = _txtLogDir.Text.Trim();
         _settings.Logging.MinimumLevel = _cmbMinLevel.SelectedItem?.ToString() ?? "Information";
