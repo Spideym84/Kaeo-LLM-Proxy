@@ -478,7 +478,8 @@ internal partial class MainForm : Form
                 mapping.EnableThinkingCompatibility,
                 mapping.UpstreamUrl,
                 mapping.UpstreamTimeoutSeconds == 0 ? string.Empty : mapping.UpstreamTimeoutSeconds.ToString(),
-                mapping.UpstreamType.ToString());
+                mapping.UpstreamType.ToString(),
+                mapping.InstructionSetName ?? "(None)");
 
             // The combo cell needs the item to exist before we can set a value.
             DataGridViewComboBoxCell cell =
@@ -489,6 +490,12 @@ internal partial class MainForm : Form
 
             cell.Value = mapping.LlamaCppName;
         }
+
+        // Populate instruction set dropdown options
+        RefreshInstructionDropdowns();
+
+        // Load instructions list
+        RefreshInstructionsList();
 
         // Logging settings
         _txtLogDir.Text = _settings.Logging.LogDirectory;
@@ -574,6 +581,7 @@ internal partial class MainForm : Form
             string? upstreamUrl = row.Cells[3].Value?.ToString() ?? string.Empty;
             string? timeoutStr  = row.Cells[4].Value?.ToString();
             string? upstreamStr = row.Cells[5].Value?.ToString();
+            string? instructionSetName = row.Cells[6].Value?.ToString();
 
             if (!string.IsNullOrWhiteSpace(ollamaName) && !string.IsNullOrWhiteSpace(llamaName))
             {
@@ -593,6 +601,10 @@ internal partial class MainForm : Form
                 if (!int.TryParse(timeoutStr, out int timeoutSec))
                     timeoutSec = 300;  // Default timeout
 
+                // Normalize "(None)" to null
+                if (string.Equals(instructionSetName, "(None)", StringComparison.OrdinalIgnoreCase))
+                    instructionSetName = null;
+
                 _settings.ModelMappings.Add(new ModelMapping
                 {
                     OllamaName             = ollamaName.Trim(),
@@ -601,6 +613,7 @@ internal partial class MainForm : Form
                     UpstreamUrl            = upstreamUrl.Trim(),
                     UpstreamTimeoutSeconds = timeoutSec,
                     UpstreamType           = upstream,
+                    InstructionSetName     = instructionSetName,
                 });
             }
         }
@@ -622,8 +635,8 @@ internal partial class MainForm : Form
     private void BtnAddMapping_Click(object? sender, EventArgs e)
     {
         // Seed the llama.cpp combo with whatever models are already loaded.
-        // Columns: [0] OllamaName, [1] LlamaCppName, [2] ThinkingCompatibility, [3] UpstreamUrl, [4] Timeout, [5] UpstreamType
-        int idx = _dgvMappings.Rows.Add(string.Empty, string.Empty, true, string.Empty, string.Empty, "LlamaCpp");
+        // Columns: [0] OllamaName, [1] LlamaCppName, [2] ThinkingCompatibility, [3] UpstreamUrl, [4] Timeout, [5] UpstreamType, [6] InstructionSet
+        int idx = _dgvMappings.Rows.Add(string.Empty, string.Empty, true, string.Empty, string.Empty, "LlamaCpp", "(None)");
 
         // Ensure the value is valid inside the combo items.
         DataGridViewComboBoxCell modelCell =
@@ -763,6 +776,137 @@ internal partial class MainForm : Form
             _btnFetchModels.Enabled = true;
             _btnFetchModels.Text = "Fetch Models ↓";
         }
+    }
+
+    // ── Instruction Sets ──────────────────────────────────────────────────────
+
+    private void RefreshInstructionsList()
+    {
+        _lstInstructions.BeginUpdate();
+        _lstInstructions.Items.Clear();
+
+        foreach (InstructionSet instructionSet in _settings.InstructionSets)
+        {
+            var item = new ListViewItem(instructionSet.Name);
+            item.SubItems.Add(instructionSet.Description ?? string.Empty);
+            item.Tag = instructionSet;
+            _lstInstructions.Items.Add(item);
+        }
+
+        _lstInstructions.EndUpdate();
+        RefreshInstructionPreview();
+    }
+
+    private void RefreshInstructionPreview()
+    {
+        if (_lstInstructions.SelectedItems.Count > 0 && _lstInstructions.SelectedItems[0].Tag is InstructionSet selected)
+        {
+            _txtInstructionPreview.Text = selected.Instructions;
+        }
+        else
+        {
+            _txtInstructionPreview.Text = string.Empty;
+        }
+    }
+
+    private void RefreshInstructionDropdowns()
+    {
+        // Update the instruction set dropdown in the model mappings grid
+        DataGridViewComboBoxColumn? col = _dgvMappings.Columns[6] as DataGridViewComboBoxColumn;
+        if (col is null)
+            return;
+
+        col.Items.Clear();
+        col.Items.Add("(None)");
+
+        foreach (InstructionSet instructionSet in _settings.InstructionSets)
+        {
+            col.Items.Add(instructionSet.Name);
+        }
+    }
+
+    private void LstInstructions_SelectedIndexChanged(object? sender, EventArgs e)
+    {
+        RefreshInstructionPreview();
+    }
+
+    private void LstInstructions_DoubleClick(object? sender, EventArgs e)
+    {
+        BtnEditInstruction_Click(sender, e);
+    }
+
+    private void BtnAddInstruction_Click(object? sender, EventArgs e)
+    {
+        InstructionSet? newSet = InstructionSetDialog.ShowAddEditDialog(this);
+        if (newSet is null)
+            return;
+
+        // Check for duplicate name
+        if (_settings.InstructionSets.Any(i => string.Equals(i.Name, newSet.Name, StringComparison.OrdinalIgnoreCase)))
+        {
+            MessageBox.Show($"An instruction set named '{newSet.Name}' already exists.", "Duplicate Name",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        _settings.InstructionSets.Add(newSet);
+        _settings.Save();
+        RefreshInstructionsList();
+        RefreshInstructionDropdowns();
+    }
+
+    private void BtnEditInstruction_Click(object? sender, EventArgs e)
+    {
+        if (_lstInstructions.SelectedItems.Count == 0)
+            return;
+
+        InstructionSet? existing = _lstInstructions.SelectedItems[0].Tag as InstructionSet;
+        if (existing is null)
+            return;
+
+        InstructionSet? edited = InstructionSetDialog.ShowAddEditDialog(this, existing);
+        if (edited is null)
+            return;
+
+        // Check for duplicate name (excluding the one being edited)
+        if (_settings.InstructionSets.Any(i => i != existing && 
+            string.Equals(i.Name, edited.Name, StringComparison.OrdinalIgnoreCase)))
+        {
+            MessageBox.Show($"An instruction set named '{edited.Name}' already exists.", "Duplicate Name",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        // Update in place
+        existing.Name = edited.Name;
+        existing.Description = edited.Description;
+        existing.Instructions = edited.Instructions;
+
+        _settings.Save();
+        RefreshInstructionsList();
+        RefreshInstructionDropdowns();
+    }
+
+    private void BtnRemoveInstruction_Click(object? sender, EventArgs e)
+    {
+        if (_lstInstructions.SelectedItems.Count == 0)
+            return;
+
+        InstructionSet? toRemove = _lstInstructions.SelectedItems[0].Tag as InstructionSet;
+        if (toRemove is null)
+            return;
+
+        DialogResult result = MessageBox.Show(
+            $"Are you sure you want to remove the instruction set '{toRemove.Name}'?",
+            "Confirm Removal", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+
+        if (result != DialogResult.Yes)
+            return;
+
+        _settings.InstructionSets.Remove(toRemove);
+        _settings.Save();
+        RefreshInstructionsList();
+        RefreshInstructionDropdowns();
     }
 
     // ── Test Console ──────────────────────────────────────────────────────────

@@ -20,6 +20,7 @@ partial class MainForm
         _tabDashboard = new TabPage();
         _tabLogs = new TabPage();
         _tabSettings = new TabPage();
+        _tabInstructions = new TabPage();
         _tabTest = new TabPage();
 
         // Dashboard controls
@@ -94,6 +95,7 @@ partial class MainForm
         _colUpstreamUrl = new DataGridViewTextBoxColumn();
         _colUpstreamTimeout = new DataGridViewTextBoxColumn();
         _colUpstreamType = new DataGridViewComboBoxColumn();
+        _colInstructionSet = new DataGridViewComboBoxColumn();
         _btnSaveSettings = new Button();
         _btnAddMapping = new Button();
         _btnRemoveMapping = new Button();
@@ -119,6 +121,18 @@ partial class MainForm
         _txtLogRetention = new TextBox();
 
         _refreshTimer = new System.Windows.Forms.Timer(components);
+
+        // Instructions tab controls
+        _tlpInstructions = new TableLayoutPanel();
+        _lstInstructions = new ListView();
+        _colInstrName = new ColumnHeader();
+        _colInstrDescription = new ColumnHeader();
+        _flpInstructionButtons = new FlowLayoutPanel();
+        _btnAddInstruction = new Button();
+        _btnEditInstruction = new Button();
+        _btnRemoveInstruction = new Button();
+        _txtInstructionPreview = new TextBox();
+        _lblInstructionPreview = new Label();
 
         // Test Console controls
         _tlpTestOuter = new TableLayoutPanel();
@@ -159,6 +173,7 @@ partial class MainForm
         _tabControl.Controls.Add(_tabDashboard);
         _tabControl.Controls.Add(_tabLogs);
         _tabControl.Controls.Add(_tabSettings);
+        _tabControl.Controls.Add(_tabInstructions);
         _tabControl.Controls.Add(_tabTest);
         _tabControl.Dock = DockStyle.Fill;
         _tabControl.Name = "_tabControl";
@@ -622,6 +637,7 @@ partial class MainForm
         _dgvMappings.Columns.Add(_colUpstreamUrl);
         _dgvMappings.Columns.Add(_colUpstreamTimeout);
         _dgvMappings.Columns.Add(_colUpstreamType);
+        _dgvMappings.Columns.Add(_colInstructionSet);
         _dgvMappings.Dock = DockStyle.Fill;
         _dgvMappings.Margin = new Padding(4, 4, 4, 4);
         _dgvMappings.MinimumSize = new Size(0, 120);
@@ -659,6 +675,13 @@ partial class MainForm
         _colUpstreamType.Name = "_colUpstreamType";
         _colUpstreamType.Width = 110;
         _colUpstreamType.FillWeight = 60;
+
+        _colInstructionSet.DisplayStyleForCurrentCellOnly = true;
+        _colInstructionSet.FlatStyle = FlatStyle.Flat;
+        _colInstructionSet.HeaderText = "Instruction Set";
+        _colInstructionSet.Name = "_colInstructionSet";
+        _colInstructionSet.FillWeight = 100;
+        _colInstructionSet.DefaultCellStyle.NullValue = "(None)";
 
         _btnAddMapping.AutoSize = true;
         _btnAddMapping.Margin = new Padding(4, 8, 4, 4);
@@ -784,6 +807,92 @@ partial class MainForm
         // _refreshTimer
         _refreshTimer.Interval = 1500;
         _refreshTimer.Tick += RefreshTimer_Tick;
+
+        // ── Instructions tab ───────────────────────────────────────────────────
+
+        // _tabInstructions
+        _tabInstructions.Controls.Add(_tlpInstructions);
+        _tabInstructions.Dock = DockStyle.Fill;
+        _tabInstructions.Name = "_tabInstructions";
+        _tabInstructions.Padding = new Padding(8);
+        _tabInstructions.Text = "Instructions";
+
+        // _tlpInstructions — 1 column, 4 rows: list | buttons | preview label | preview text
+        _tlpInstructions.ColumnCount = 1;
+        _tlpInstructions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        _tlpInstructions.Controls.Add(_lstInstructions, 0, 0);
+        _tlpInstructions.Controls.Add(_flpInstructionButtons, 0, 1);
+        _tlpInstructions.Controls.Add(_lblInstructionPreview, 0, 2);
+        _tlpInstructions.Controls.Add(_txtInstructionPreview, 0, 3);
+        _tlpInstructions.Dock = DockStyle.Fill;
+        _tlpInstructions.Name = "_tlpInstructions";
+        _tlpInstructions.RowCount = 4;
+        _tlpInstructions.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+        _tlpInstructions.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _tlpInstructions.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _tlpInstructions.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+
+        // _lstInstructions
+        _lstInstructions.Columns.Add(_colInstrName);
+        _lstInstructions.Columns.Add(_colInstrDescription);
+        _lstInstructions.Dock = DockStyle.Fill;
+        _lstInstructions.FullRowSelect = true;
+        _lstInstructions.GridLines = true;
+        _lstInstructions.Margin = new Padding(0, 0, 0, 8);
+        _lstInstructions.MultiSelect = false;
+        _lstInstructions.Name = "_lstInstructions";
+        _lstInstructions.View = View.Details;
+        _lstInstructions.SelectedIndexChanged += LstInstructions_SelectedIndexChanged;
+        _lstInstructions.DoubleClick += LstInstructions_DoubleClick;
+
+        _colInstrName.Text = "Name";
+        _colInstrName.Width = 200;
+        _colInstrDescription.Text = "Description";
+        _colInstrDescription.Width = 400;
+
+        // _flpInstructionButtons
+        _flpInstructionButtons.AutoSize = true;
+        _flpInstructionButtons.Controls.Add(_btnAddInstruction);
+        _flpInstructionButtons.Controls.Add(_btnEditInstruction);
+        _flpInstructionButtons.Controls.Add(_btnRemoveInstruction);
+        _flpInstructionButtons.Dock = DockStyle.Fill;
+        _flpInstructionButtons.FlowDirection = FlowDirection.LeftToRight;
+        _flpInstructionButtons.Margin = new Padding(0, 0, 0, 8);
+        _flpInstructionButtons.Name = "_flpInstructionButtons";
+        _flpInstructionButtons.WrapContents = false;
+
+        _btnAddInstruction.AutoSize = true;
+        _btnAddInstruction.Margin = new Padding(0, 0, 8, 0);
+        _btnAddInstruction.Name = "_btnAddInstruction";
+        _btnAddInstruction.Text = "Add New";
+        _btnAddInstruction.Click += BtnAddInstruction_Click;
+
+        _btnEditInstruction.AutoSize = true;
+        _btnEditInstruction.Margin = new Padding(0, 0, 8, 0);
+        _btnEditInstruction.Name = "_btnEditInstruction";
+        _btnEditInstruction.Text = "Edit";
+        _btnEditInstruction.Click += BtnEditInstruction_Click;
+
+        _btnRemoveInstruction.AutoSize = true;
+        _btnRemoveInstruction.Margin = new Padding(0, 0, 8, 0);
+        _btnRemoveInstruction.Name = "_btnRemoveInstruction";
+        _btnRemoveInstruction.Text = "Remove";
+        _btnRemoveInstruction.Click += BtnRemoveInstruction_Click;
+
+        // _lblInstructionPreview
+        _lblInstructionPreview.AutoSize = true;
+        _lblInstructionPreview.Dock = DockStyle.Fill;
+        _lblInstructionPreview.Margin = new Padding(0, 0, 0, 4);
+        _lblInstructionPreview.Name = "_lblInstructionPreview";
+        _lblInstructionPreview.Text = "Preview:";
+
+        // _txtInstructionPreview
+        _txtInstructionPreview.Dock = DockStyle.Fill;
+        _txtInstructionPreview.Margin = new Padding(0);
+        _txtInstructionPreview.Multiline = true;
+        _txtInstructionPreview.Name = "_txtInstructionPreview";
+        _txtInstructionPreview.ReadOnly = true;
+        _txtInstructionPreview.ScrollBars = ScrollBars.Vertical;
 
         // ── Test Console tab ──────────────────────────────────────────────────
 
@@ -922,6 +1031,10 @@ partial class MainForm
         _flpLogsButtons.ResumeLayout(false);
         _flpLogsButtons.PerformLayout();
         _tabSettings.ResumeLayout(false);
+        _tabInstructions.ResumeLayout(false);
+        _tlpInstructions.ResumeLayout(false);
+        _tlpInstructions.PerformLayout();
+        _flpInstructionButtons.ResumeLayout(false);
         _flpStatusButtons.ResumeLayout(false);
         _flpStatusButtons.PerformLayout();
         _pnlStatus.ResumeLayout(false);
@@ -1001,6 +1114,7 @@ partial class MainForm
     private DataGridViewTextBoxColumn _colUpstreamUrl;
     private DataGridViewTextBoxColumn _colUpstreamTimeout;
     private DataGridViewComboBoxColumn _colUpstreamType;
+    private DataGridViewComboBoxColumn _colInstructionSet;
     private Button _btnAddMapping;
     private Button _btnRemoveMapping;
     private Button _btnFetchModels;
@@ -1026,6 +1140,19 @@ partial class MainForm
     private TextBox _txtReqLogSize;
     private Label _lblLogRetention;
     private TextBox _txtLogRetention;
+
+    // Instructions tab
+    private TabPage _tabInstructions;
+    private TableLayoutPanel _tlpInstructions;
+    private ListView _lstInstructions;
+    private ColumnHeader _colInstrName;
+    private ColumnHeader _colInstrDescription;
+    private FlowLayoutPanel _flpInstructionButtons;
+    private Button _btnAddInstruction;
+    private Button _btnEditInstruction;
+    private Button _btnRemoveInstruction;
+    private Label _lblInstructionPreview;
+    private TextBox _txtInstructionPreview;
 
     // Test Console
     private TabPage _tabTest;

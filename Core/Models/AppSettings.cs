@@ -9,6 +9,19 @@ internal enum UpstreamType
     LlamaCpp,
 }
 
+/// <summary>Named custom instruction set that can be injected into AI requests.</summary>
+internal sealed class InstructionSet
+{
+    /// <summary>Unique name for this instruction set.</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>The instruction text to inject into requests.</summary>
+    public string Instructions { get; set; } = string.Empty;
+
+    /// <summary>Optional description for this instruction set.</summary>
+    public string? Description { get; set; }
+}
+
 /// <summary>Maps an Ollama model name to a specific upstream server and llama.cpp model name.</summary>
 internal sealed class ModelMapping
 {
@@ -49,6 +62,12 @@ internal sealed class ModelMapping
     /// Prevents infinite retry loops. Min: 1, Max: 3. Default: 2.
     /// </summary>
     public int MaxSummarizationRetries { get; set; } = 2;
+
+    /// <summary>
+    /// Optional name of the instruction set to inject into requests for this model.
+    /// When specified, the instructions will be prepended to the conversation.
+    /// </summary>
+    public string? InstructionSetName { get; set; }
 }
 
 /// <summary>Logging configuration persisted inside settings.jsonc.</summary>
@@ -113,6 +132,9 @@ internal sealed class AppSettings
 
     /// <summary>Model name mappings: Each Ollama model name maps to a specific upstream server and llama.cpp model name.</summary>
     public List<ModelMapping> ModelMappings { get; set; } = [];
+
+    /// <summary>Named instruction sets that can be assigned to model mappings for request injection.</summary>
+    public List<InstructionSet> InstructionSets { get; set; } = [];
 
     /// <summary>Maximum number of log entries to keep in memory. Min: 10, Max: 100000.</summary>
     public int MaxLogEntries { get; set; } = 500;
@@ -223,6 +245,24 @@ internal sealed class AppSettings
         return null;
     }
 
+    /// <summary>
+    /// Finds an instruction set by name (case-insensitive).
+    /// Returns null when no instruction set with the given name exists.
+    /// </summary>
+    public InstructionSet? FindInstructionSet(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return null;
+
+        foreach (InstructionSet instructionSet in InstructionSets)
+        {
+            if (string.Equals(instructionSet.Name, name, StringComparison.OrdinalIgnoreCase))
+                return instructionSet;
+        }
+
+        return null;
+    }
+
     private static string JsBool(bool value) => value ? "true" : "false";
 
     /// <summary>Writes the annotated default config template to disk on first run.</summary>
@@ -279,10 +319,20 @@ internal sealed class AppSettings
         sb.AppendLine("  // Each mapping MUST specify its own UpstreamUrl.");
         sb.AppendLine("  // EnableThinkingCompatibility strips assistant response-prefill turns for models that reject them when thinking is enabled.");
         sb.AppendLine("  // UpstreamTimeoutSeconds: defaults to 300 if not specified or zero.");
+        sb.AppendLine("  // InstructionSetName: optional reference to an instruction set (defined below) to inject into requests.");
         sb.AppendLine("  // Example:");
         sb.AppendLine("  //   { \"OllamaName\": \"llama3\", \"LlamaCppName\": \"llama-3-8b\", \"EnableThinkingCompatibility\": true,");
-        sb.AppendLine("  //     \"UpstreamUrl\": \"http://192.168.1.10:8080\", \"UpstreamTimeoutSeconds\": 120 }");
+        sb.AppendLine("  //     \"UpstreamUrl\": \"http://192.168.1.10:8080\", \"UpstreamTimeoutSeconds\": 120,");
+        sb.AppendLine("  //     \"InstructionSetName\": \"CodeExpert\" }");
         sb.AppendLine("  \"ModelMappings\": [],");
+        sb.AppendLine();
+        sb.AppendLine("  // ──── Instruction Sets ──────────────────────────────────────────────────────────────────────");
+        sb.AppendLine("  // Named instruction sets that can be assigned to model mappings.");
+        sb.AppendLine("  // Instructions are injected as system messages before the conversation.");
+        sb.AppendLine("  // Example:");
+        sb.AppendLine("  //   { \"Name\": \"CodeExpert\", \"Description\": \"Expert coding assistant\",");
+        sb.AppendLine("  //     \"Instructions\": \"You are an expert programmer. Always provide clean, well-documented code.\" }");
+        sb.AppendLine("  \"InstructionSets\": [],");
         sb.AppendLine();
         sb.AppendLine("  // \u2500\u2500\u2500 Logging \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
         sb.AppendLine("  \"Logging\": {");

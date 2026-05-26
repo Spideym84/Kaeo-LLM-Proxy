@@ -665,9 +665,27 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         log.Streaming = ollamaReq.Stream;
         var (genBase, genTimeout) = ResolveUpstream(ollamaReq.Model);
 
-        string prompt = string.IsNullOrEmpty(ollamaReq.System)
-            ? ollamaReq.Prompt
-            : $"{ollamaReq.System}\n\n{ollamaReq.Prompt}";
+        // Build the prompt, optionally injecting custom instructions
+        string prompt = ollamaReq.Prompt;
+        string? systemPrefix = ollamaReq.System;
+
+        // Inject custom instructions if configured for this model mapping
+        ModelMapping? mapping = _settings.FindModelMapping(ollamaReq.Model);
+        if (mapping?.InstructionSetName is not null)
+        {
+            InstructionSet? instructionSet = _settings.FindInstructionSet(mapping.InstructionSetName);
+            if (instructionSet is not null && !string.IsNullOrWhiteSpace(instructionSet.Instructions))
+            {
+                // Prepend custom instructions to the system prompt
+                systemPrefix = string.IsNullOrEmpty(systemPrefix)
+                    ? instructionSet.Instructions
+                    : $"{instructionSet.Instructions}\n\n{systemPrefix}";
+            }
+        }
+
+        // Combine system and user prompt
+        if (!string.IsNullOrEmpty(systemPrefix))
+            prompt = $"{systemPrefix}\n\n{prompt}";
 
         var llamaReq = new LlamaCppCompletionRequest
         {
@@ -764,6 +782,17 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             && IsAssistantResponsePrefill(messages[^1]))
         {
             messages.RemoveAt(messages.Count - 1);
+        }
+
+        // Inject custom instructions if configured for this model mapping
+        if (mapping?.InstructionSetName is not null)
+        {
+            InstructionSet? instructionSet = _settings.FindInstructionSet(mapping.InstructionSetName);
+            if (instructionSet is not null && !string.IsNullOrWhiteSpace(instructionSet.Instructions))
+            {
+                // Prepend system message with custom instructions
+                messages.Insert(0, new LlamaCppMessage("system", instructionSet.Instructions));
+            }
         }
 
         // Retry loop for context overflow handling
