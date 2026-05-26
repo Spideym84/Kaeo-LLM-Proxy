@@ -30,7 +30,11 @@ internal sealed class StatisticsService : IDisposable
 
     private readonly System.Threading.Timer? _cleanupTimer;
 
+    // Per-model heartbeat counters. Key: resolved model name. Updated lock-free via Interlocked.
+    private readonly ConcurrentDictionary<string, HeartbeatStat> _heartbeats = new(StringComparer.OrdinalIgnoreCase);
+
     public event EventHandler? StatsChanged;
+    public event EventHandler? HeartbeatsChanged;
 
     public StatisticsService(int maxEntries = 500, RequestLogStore? store = null, int retentionHours = 72)
     {
@@ -148,6 +152,35 @@ internal sealed class StatisticsService : IDisposable
     }
 
     /// <summary>
+    /// Records one heartbeat frame emitted for the given model. Thread-safe; non-blocking.
+    /// Safe to call from the streaming pipeline.
+    /// </summary>
+    public void IncrementHeartbeat(string? modelName)
+    {
+        string key = string.IsNullOrWhiteSpace(modelName) ? "(unknown)" : modelName.Trim();
+        HeartbeatStat stat = _heartbeats.GetOrAdd(key, _ => new HeartbeatStat());
+        Interlocked.Increment(ref stat.Count);
+        stat.LastSentUtcTicks = DateTime.UtcNow.Ticks;
+        HeartbeatsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Returns a thread-safe snapshot of heartbeat counters keyed by model name.</summary>
+    public IReadOnlyList<HeartbeatSnapshot> GetHeartbeatStats()
+    {
+        return [.. _heartbeats.Select(kvp => new HeartbeatSnapshot(
+            kvp.Key,
+            Interlocked.Read(ref kvp.Value.Count),
+            new DateTime(Interlocked.Read(ref kvp.Value.LastSentUtcTicks), DateTimeKind.Utc)))];
+    }
+
+    /// <summary>Clears all heartbeat counters.</summary>
+    public void ResetHeartbeats()
+    {
+        _heartbeats.Clear();
+        HeartbeatsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
     /// Deletes entries from LiteDB and the in-memory queue that are older than
     /// <see cref="_retentionHours"/>. A value of 0 means keep forever.
     /// </summary>
@@ -183,3 +216,13 @@ internal sealed class StatisticsService : IDisposable
 
     public void Dispose() => _cleanupTimer?.Dispose();
 }
+
+/// <summary>Mutable counter holder used internally by <see cref="StatisticsService"/>.</summary>
+internal sealed class HeartbeatStat
+{
+    public long Count;
+    public long LastSentUtcTicks;
+}
+
+/// <summary>Immutable snapshot of heartbeat activity for a single model.</summary>
+internal sealed record HeartbeatSnapshot(string Model, long Count, DateTime LastSentUtc);

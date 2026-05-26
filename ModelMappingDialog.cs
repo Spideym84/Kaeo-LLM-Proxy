@@ -35,6 +35,7 @@ internal sealed class ModelMappingDialog : Form
     private readonly Label _lblUpstreamTimeout = new();
     private readonly TextBox _txtUpstreamTimeout = new();
     private readonly CheckBox _chkEnableThinkingCompatibility = new();
+    private readonly CheckBox _chkEnableHeartbeats = new();
     private readonly CheckBox _chkRedactRequestBodies = new();
     private readonly CheckBox _chkRedactResponseBodies = new();
     private readonly CheckBox _chkRedactSensitiveJsonFields = new();
@@ -97,6 +98,13 @@ internal sealed class ModelMappingDialog : Form
     }
 
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    private bool EnableHeartbeats
+    {
+        get => _chkEnableHeartbeats.Checked;
+        set => _chkEnableHeartbeats.Checked = value;
+    }
+
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     private int UpstreamTimeoutSeconds
     {
         get => int.TryParse(_txtUpstreamTimeout.Text, out int v) && v > 0 ? v : 300;
@@ -140,7 +148,8 @@ internal sealed class ModelMappingDialog : Form
         _tlpMain.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         _tlpMain.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         _tlpMain.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        _tlpMain.RowCount = 11;
+        _tlpMain.RowCount = 12;
+        _tlpMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _tlpMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _tlpMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _tlpMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -181,14 +190,16 @@ internal sealed class ModelMappingDialog : Form
 
         _tlpMain.SetColumnSpan(_chkEnableThinkingCompatibility, 3);
         _tlpMain.Controls.Add(_chkEnableThinkingCompatibility, 0, 6);
+        _tlpMain.SetColumnSpan(_chkEnableHeartbeats, 3);
+        _tlpMain.Controls.Add(_chkEnableHeartbeats, 0, 7);
         _tlpMain.SetColumnSpan(_chkRedactRequestBodies, 3);
-        _tlpMain.Controls.Add(_chkRedactRequestBodies, 0, 7);
+        _tlpMain.Controls.Add(_chkRedactRequestBodies, 0, 8);
         _tlpMain.SetColumnSpan(_chkRedactResponseBodies, 3);
-        _tlpMain.Controls.Add(_chkRedactResponseBodies, 0, 8);
+        _tlpMain.Controls.Add(_chkRedactResponseBodies, 0, 9);
         _tlpMain.SetColumnSpan(_chkRedactSensitiveJsonFields, 3);
-        _tlpMain.Controls.Add(_chkRedactSensitiveJsonFields, 0, 9);
+        _tlpMain.Controls.Add(_chkRedactSensitiveJsonFields, 0, 10);
         _tlpMain.SetColumnSpan(_flpButtons, 3);
-        _tlpMain.Controls.Add(_flpButtons, 0, 10);
+        _tlpMain.Controls.Add(_flpButtons, 0, 11);
 
         _lblProxyName.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         _lblProxyName.AutoSize = true;
@@ -250,6 +261,11 @@ internal sealed class ModelMappingDialog : Form
         _chkEnableThinkingCompatibility.AutoSize = true;
         _chkEnableThinkingCompatibility.Margin = new Padding(0, 8, 0, 2);
         _chkEnableThinkingCompatibility.Text = "Enable thinking compatibility (strip assistant response-prefill turns)";
+
+        _chkEnableHeartbeats.AutoSize = true;
+        _chkEnableHeartbeats.Margin = new Padding(0, 2, 0, 2);
+        _chkEnableHeartbeats.Text = "Enable streaming heartbeats for this model (keep-alive frames while waiting)";
+        _chkEnableHeartbeats.Checked = true;
 
         _chkRedactRequestBodies.AutoSize = true;
         _chkRedactRequestBodies.Margin = new Padding(0, 8, 0, 2);
@@ -410,6 +426,7 @@ internal sealed class ModelMappingDialog : Form
         dlg.PopulateModelItems(existingModelItems, mapping.ModelName);
         dlg.InstructionSetName = mapping.InstructionSetName;
         dlg.EnableThinkingCompatibility = mapping.EnableThinkingCompatibility;
+        dlg.EnableHeartbeats = mapping.EnableHeartbeats;
         dlg.UpstreamTimeoutSeconds = mapping.UpstreamTimeoutSeconds;
         dlg.RedactRequestBodies = mapping.RedactRequestBodies;
         dlg.RedactResponseBodies = mapping.RedactResponseBodies;
@@ -430,6 +447,7 @@ internal sealed class ModelMappingDialog : Form
         mapping.ModelName = (dlg._cmbModelName.SelectedItem?.ToString() ?? dlg._cmbModelName.Text ?? string.Empty).Trim();
         mapping.InstructionSetName = dlg.InstructionSetName;
         mapping.EnableThinkingCompatibility = dlg.EnableThinkingCompatibility;
+        mapping.EnableHeartbeats = dlg.EnableHeartbeats;
         mapping.UpstreamTimeoutSeconds = dlg.UpstreamTimeoutSeconds;
         mapping.RedactRequestBodies = dlg.RedactRequestBodies;
         mapping.RedactResponseBodies = dlg.RedactResponseBodies;

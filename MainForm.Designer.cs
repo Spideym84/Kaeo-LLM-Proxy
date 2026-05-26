@@ -22,6 +22,7 @@ partial class MainForm
         _tabSettings = new TabPage();
         _tabInstructions = new TabPage();
         _tabTest = new TabPage();
+        _tabHeartbeats = new TabPage();
 
         // Dashboard controls
         _tlpDashboard = new TableLayoutPanel();
@@ -102,9 +103,6 @@ partial class MainForm
         _chkStartWithDashboard = new CheckBox();
         _chkCollectDetails = new CheckBox();
         _chkCollectResponseDetails = new CheckBox();
-        _chkStreamingHeartbeats = new CheckBox();
-        _lblHeartbeatInterval = new Label();
-        _txtHeartbeatInterval = new TextBox();
 
         _grpLogging = new GroupBox();
         _tlpLogging = new TableLayoutPanel();
@@ -149,6 +147,20 @@ partial class MainForm
         _txtTestResponse = new TextBox();
         _lblTestStatus = new Label();
 
+        // Heartbeats tab controls
+        _tlpHeartbeats = new TableLayoutPanel();
+        _chkStreamingHeartbeats = new CheckBox();
+        _lblHeartbeatInterval = new Label();
+        _txtHeartbeatInterval = new TextBox();
+        _lblHeartbeatStats = new Label();
+        _lstHeartbeats = new ListView();
+        _colHbModel = new ColumnHeader();
+        _colHbCount = new ColumnHeader();
+        _colHbLast = new ColumnHeader();
+        _flpHeartbeatButtons = new FlowLayoutPanel();
+        _btnResetHeartbeats = new Button();
+        _btnSaveHeartbeats = new Button();
+
         _grpLogging.SuspendLayout();
         _tlpLogging.SuspendLayout();
         _grpPerf.SuspendLayout();
@@ -164,6 +176,9 @@ partial class MainForm
         _tabTest.SuspendLayout();
         _tlpTestOuter.SuspendLayout();
         _tlpTestTop.SuspendLayout();
+        _tabHeartbeats.SuspendLayout();
+        _tlpHeartbeats.SuspendLayout();
+        _flpHeartbeatButtons.SuspendLayout();
         ((System.ComponentModel.ISupportInitialize)_nudTestTemp).BeginInit();
         _grpStatus.SuspendLayout();
         _pnlStatus.SuspendLayout();
@@ -177,6 +192,7 @@ partial class MainForm
         _tabControl.Controls.Add(_tabSettings);
         _tabControl.Controls.Add(_tabInstructions);
         _tabControl.Controls.Add(_tabTest);
+        _tabControl.Controls.Add(_tabHeartbeats);
         _tabControl.Dock = DockStyle.Fill;
         _tabControl.Name = "_tabControl";
         _tabControl.SelectedIndex = 0;
@@ -560,7 +576,7 @@ partial class MainForm
         _tlpSettings.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         _tlpSettings.Location = new Point(8, 8);
         _tlpSettings.Name = "_tlpSettings";
-        _tlpSettings.RowCount = 12;
+        _tlpSettings.RowCount = 10;
         _tlpSettings.Size = new Size(660, 460);
 
         _tlpSettings.Controls.Add(_lblListenPort, 0, 0);
@@ -575,18 +591,14 @@ partial class MainForm
         _tlpSettings.Controls.Add(_chkCollectDetails, 0, 4);
         _tlpSettings.SetColumnSpan(_chkCollectResponseDetails, 2);
         _tlpSettings.Controls.Add(_chkCollectResponseDetails, 0, 5);
-        _tlpSettings.SetColumnSpan(_chkStreamingHeartbeats, 2);
-        _tlpSettings.Controls.Add(_chkStreamingHeartbeats, 0, 6);
-        _tlpSettings.Controls.Add(_lblHeartbeatInterval, 0, 7);
-        _tlpSettings.Controls.Add(_txtHeartbeatInterval, 1, 7);
         _tlpSettings.SetColumnSpan(_lblMappings, 2);
-        _tlpSettings.Controls.Add(_lblMappings, 0, 8);
+        _tlpSettings.Controls.Add(_lblMappings, 0, 6);
         _tlpSettings.SetColumnSpan(_dgvMappings, 2);
-        _tlpSettings.Controls.Add(_dgvMappings, 0, 9);
+        _tlpSettings.Controls.Add(_dgvMappings, 0, 7);
         _tlpSettings.SetColumnSpan(_flpMappingButtons, 2);
-        _tlpSettings.Controls.Add(_flpMappingButtons, 0, 10);
+        _tlpSettings.Controls.Add(_flpMappingButtons, 0, 8);
         _tlpSettings.SetColumnSpan(_btnSaveSettings, 2);
-        _tlpSettings.Controls.Add(_btnSaveSettings, 0, 11);
+        _tlpSettings.Controls.Add(_btnSaveSettings, 0, 9);
 
         _lblListenPort.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         _lblListenPort.AutoSize = true;
@@ -1021,6 +1033,96 @@ partial class MainForm
         _lblTestStatus.Name = "_lblTestStatus";
         _lblTestStatus.Text = "Ready";
 
+        // ── Heartbeats tab ─────────────────────────────────────────────────────
+
+        _tabHeartbeats.Controls.Add(_tlpHeartbeats);
+        _tabHeartbeats.Dock = DockStyle.Fill;
+        _tabHeartbeats.Name = "_tabHeartbeats";
+        _tabHeartbeats.Padding = new Padding(8);
+        _tabHeartbeats.Text = "Heartbeats";
+
+        _tlpHeartbeats.ColumnCount = 2;
+        _tlpHeartbeats.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _tlpHeartbeats.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        _tlpHeartbeats.Dock = DockStyle.Fill;
+        _tlpHeartbeats.Name = "_tlpHeartbeats";
+        _tlpHeartbeats.RowCount = 5;
+        _tlpHeartbeats.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _tlpHeartbeats.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _tlpHeartbeats.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _tlpHeartbeats.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        _tlpHeartbeats.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _tlpHeartbeats.SetColumnSpan(_chkStreamingHeartbeats, 2);
+        _tlpHeartbeats.Controls.Add(_chkStreamingHeartbeats, 0, 0);
+        _tlpHeartbeats.Controls.Add(_lblHeartbeatInterval, 0, 1);
+        _tlpHeartbeats.Controls.Add(_txtHeartbeatInterval, 1, 1);
+        _tlpHeartbeats.SetColumnSpan(_lblHeartbeatStats, 2);
+        _tlpHeartbeats.Controls.Add(_lblHeartbeatStats, 0, 2);
+        _tlpHeartbeats.SetColumnSpan(_lstHeartbeats, 2);
+        _tlpHeartbeats.Controls.Add(_lstHeartbeats, 0, 3);
+        _tlpHeartbeats.SetColumnSpan(_flpHeartbeatButtons, 2);
+        _tlpHeartbeats.Controls.Add(_flpHeartbeatButtons, 0, 4);
+
+        _chkStreamingHeartbeats.AutoSize = true;
+        _chkStreamingHeartbeats.Margin = new Padding(4, 4, 4, 4);
+        _chkStreamingHeartbeats.Name = "_chkStreamingHeartbeats";
+        _chkStreamingHeartbeats.Text = "Enable streaming heartbeats for long-thinking models (global)";
+
+        _lblHeartbeatInterval.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblHeartbeatInterval.AutoSize = true;
+        _lblHeartbeatInterval.Margin = new Padding(4, 8, 8, 4);
+        _lblHeartbeatInterval.Name = "_lblHeartbeatInterval";
+        _lblHeartbeatInterval.Text = "Heartbeat Interval (seconds):";
+
+        _txtHeartbeatInterval.Dock = DockStyle.Fill;
+        _txtHeartbeatInterval.Margin = new Padding(4, 6, 4, 8);
+        _txtHeartbeatInterval.Name = "_txtHeartbeatInterval";
+
+        _lblHeartbeatStats.AutoSize = true;
+        _lblHeartbeatStats.Margin = new Padding(4, 8, 4, 4);
+        _lblHeartbeatStats.Name = "_lblHeartbeatStats";
+        _lblHeartbeatStats.Text = "Heartbeat activity by model:";
+
+        _lstHeartbeats.Columns.Add(_colHbModel);
+        _lstHeartbeats.Columns.Add(_colHbCount);
+        _lstHeartbeats.Columns.Add(_colHbLast);
+        _lstHeartbeats.Dock = DockStyle.Fill;
+        _lstHeartbeats.FullRowSelect = true;
+        _lstHeartbeats.GridLines = true;
+        _lstHeartbeats.Margin = new Padding(4, 4, 4, 4);
+        _lstHeartbeats.MinimumSize = new Size(0, 160);
+        _lstHeartbeats.Name = "_lstHeartbeats";
+        _lstHeartbeats.View = View.Details;
+
+        _colHbModel.Text = "Model";
+        _colHbModel.Width = 220;
+        _colHbCount.Text = "Heartbeats Sent";
+        _colHbCount.Width = 130;
+        _colHbLast.Text = "Last Sent";
+        _colHbLast.Width = 180;
+
+        _flpHeartbeatButtons.AutoSize = true;
+        _flpHeartbeatButtons.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        _flpHeartbeatButtons.Controls.Add(_btnSaveHeartbeats);
+        _flpHeartbeatButtons.Controls.Add(_btnResetHeartbeats);
+        _flpHeartbeatButtons.Dock = DockStyle.Fill;
+        _flpHeartbeatButtons.FlowDirection = FlowDirection.LeftToRight;
+        _flpHeartbeatButtons.Margin = new Padding(0, 4, 0, 4);
+        _flpHeartbeatButtons.Name = "_flpHeartbeatButtons";
+        _flpHeartbeatButtons.WrapContents = false;
+
+        _btnSaveHeartbeats.AutoSize = true;
+        _btnSaveHeartbeats.Margin = new Padding(4, 4, 4, 4);
+        _btnSaveHeartbeats.Name = "_btnSaveHeartbeats";
+        _btnSaveHeartbeats.Text = "Save";
+        _btnSaveHeartbeats.Click += BtnSaveHeartbeats_Click;
+
+        _btnResetHeartbeats.AutoSize = true;
+        _btnResetHeartbeats.Margin = new Padding(4, 4, 4, 4);
+        _btnResetHeartbeats.Name = "_btnResetHeartbeats";
+        _btnResetHeartbeats.Text = "Reset Counters";
+        _btnResetHeartbeats.Click += BtnResetHeartbeats_Click;
+
         // MainForm
         AutoScaleDimensions = new SizeF(7F, 15F);
         AutoScaleMode = AutoScaleMode.Font;
@@ -1067,6 +1169,11 @@ partial class MainForm
         _tlpTestOuter.PerformLayout();
         _tlpTestTop.ResumeLayout(false);
         _tlpTestTop.PerformLayout();
+        _tabHeartbeats.ResumeLayout(false);
+        _tlpHeartbeats.ResumeLayout(false);
+        _tlpHeartbeats.PerformLayout();
+        _flpHeartbeatButtons.ResumeLayout(false);
+        _flpHeartbeatButtons.PerformLayout();
         ((System.ComponentModel.ISupportInitialize)_nudTestTemp).EndInit();
         ((System.ComponentModel.ISupportInitialize)_dgvMappings).EndInit();
         ResumeLayout(false);
@@ -1190,4 +1297,16 @@ partial class MainForm
     private TextBox _txtTestPrompt;
     private TextBox _txtTestResponse;
     private Label _lblTestStatus;
+
+    // Heartbeats tab
+    private TabPage _tabHeartbeats;
+    private TableLayoutPanel _tlpHeartbeats;
+    private Label _lblHeartbeatStats;
+    private ListView _lstHeartbeats;
+    private ColumnHeader _colHbModel;
+    private ColumnHeader _colHbCount;
+    private ColumnHeader _colHbLast;
+    private FlowLayoutPanel _flpHeartbeatButtons;
+    private Button _btnResetHeartbeats;
+    private Button _btnSaveHeartbeats;
 }

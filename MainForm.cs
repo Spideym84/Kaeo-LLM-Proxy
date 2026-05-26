@@ -44,6 +44,8 @@ internal partial class MainForm : Form
         RefreshStatus();
         RefreshStats();
         RefreshLogs();
+        RefreshHeartbeats();
+        _stats.HeartbeatsChanged += OnHeartbeatsChanged;
         _cmbRefreshInterval.SelectedIndex = 1; // default: 2 s
         _refreshTimer.Start();
         _tabControl.SelectedIndexChanged += TabControl_SelectedIndexChanged;
@@ -66,6 +68,7 @@ internal partial class MainForm : Form
     {
         _refreshTimer.Stop();
         _stats.StatsChanged -= OnStatsChanged;
+        _stats.HeartbeatsChanged -= OnHeartbeatsChanged;
         _server.StatusChanged -= OnServerStatusChanged;
         _perfService.Sampled -= OnPerfSampled;
         base.OnFormClosed(e);
@@ -444,6 +447,65 @@ internal partial class MainForm : Form
             RefreshLogs();
     }
 
+    // ── Heartbeats tab ──────────────────────────────────────────────────────
+
+    private void OnHeartbeatsChanged(object? sender, EventArgs e)
+    {
+        if (IsDisposed) return;
+        if (InvokeRequired)
+        {
+            BeginInvoke(RefreshHeartbeats);
+            return;
+        }
+        RefreshHeartbeats();
+    }
+
+    private void RefreshHeartbeats()
+    {
+        IReadOnlyList<HeartbeatSnapshot> snapshots = _stats.GetHeartbeatStats();
+
+        _lstHeartbeats.BeginUpdate();
+        _lstHeartbeats.Items.Clear();
+
+        foreach (HeartbeatSnapshot snap in snapshots.OrderByDescending(s => s.LastSentUtc))
+        {
+            ListViewItem item = new(snap.Model);
+            item.SubItems.Add(snap.Count.ToString("N0"));
+            item.SubItems.Add(snap.LastSentUtc == default
+                ? "—"
+                : snap.LastSentUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"));
+            _lstHeartbeats.Items.Add(item);
+        }
+
+        _lstHeartbeats.EndUpdate();
+    }
+
+    private void BtnSaveHeartbeats_Click(object? sender, EventArgs e)
+    {
+        if (!int.TryParse(_txtHeartbeatInterval.Text, out int heartbeatIntervalSeconds)
+            || heartbeatIntervalSeconds < 5
+            || heartbeatIntervalSeconds > 300)
+        {
+            MessageBox.Show("Heartbeat interval must be a number between 5 and 300 seconds.", "Validation",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        _settings.EnableStreamingHeartbeats = _chkStreamingHeartbeats.Checked;
+        _settings.StreamingHeartbeatIntervalSeconds = heartbeatIntervalSeconds;
+        _settings.Save();
+        _handler.UpdateSettings(_settings);
+
+        MessageBox.Show("Heartbeat settings saved.", "Saved",
+            MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    private void BtnResetHeartbeats_Click(object? sender, EventArgs e)
+    {
+        _stats.ResetHeartbeats();
+        RefreshHeartbeats();
+    }
+
     private void CmbRefreshInterval_SelectedIndexChanged(object? sender, EventArgs e)
     {
         int intervalMs = _cmbRefreshInterval.SelectedIndex switch
@@ -489,6 +551,7 @@ internal partial class MainForm : Form
                 ProxyName = mapping.ProxyName,
                 ModelName = mapping.ModelName,
                 EnableThinkingCompatibility = mapping.EnableThinkingCompatibility,
+                EnableHeartbeats = mapping.EnableHeartbeats,
                 UpstreamUrl = mapping.UpstreamUrl,
                 UpstreamTimeoutSeconds = mapping.UpstreamTimeoutSeconds,
                 UpstreamType = mapping.UpstreamType,
@@ -575,23 +638,12 @@ internal partial class MainForm : Form
             return;
         }
 
-        if (!int.TryParse(_txtHeartbeatInterval.Text, out int heartbeatIntervalSeconds)
-            || heartbeatIntervalSeconds < 5
-            || heartbeatIntervalSeconds > 300)
-        {
-            MessageBox.Show("Heartbeat interval must be a number between 5 and 300 seconds.", "Validation",
-                MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-
         _settings.ListenPort = port;
         _settings.MaxLogEntries = maxLogs;
         _settings.AutoStartProxy = _chkAutoStart.Checked;
         _settings.StartWithDashboardOpen = _chkStartWithDashboard.Checked;
         _settings.CollectRequestDetails = _chkCollectDetails.Checked;
         _settings.CollectResponseDetails = _chkCollectResponseDetails.Checked;
-        _settings.EnableStreamingHeartbeats = _chkStreamingHeartbeats.Checked;
-        _settings.StreamingHeartbeatIntervalSeconds = heartbeatIntervalSeconds;
 
         _settings.Logging.LogDirectory = _txtLogDir.Text.Trim();
         _settings.Logging.MinimumLevel = _cmbMinLevel.SelectedItem?.ToString() ?? "Information";
@@ -642,6 +694,7 @@ internal partial class MainForm : Form
                     ProxyName              = trimmedProxy,
                     ModelName              = modelName.Trim(),
                     EnableThinkingCompatibility = advanced?.EnableThinkingCompatibility ?? true,
+                    EnableHeartbeats       = advanced?.EnableHeartbeats ?? true,
                     UpstreamUrl            = upstreamUrl.Trim(),
                     UpstreamTimeoutSeconds = advanced?.UpstreamTimeoutSeconds ?? 300,
                     UpstreamType           = upstream,
@@ -1250,8 +1303,17 @@ internal partial class MainForm : Form
             if (!isSse)
             {
                 // Upstream ignored stream=true (or returned an error/JSON body).
-                // Read the whole thing and surface it so the user sees something.
+                // Parse it as a non-streaming chat completion if possible so the
+                // visible response box shows the assistant message instead of raw JSON.
                 string body = await resp.Content.ReadAsStringAsync(requestCts.Token);
+
+                string? extracted = TryExtractNonStreamingContent(body);
+                if (!string.IsNullOrEmpty(extracted))
+                {
+                    yield return extracted;
+                    yield break;
+                }
+
                 yield return $"[Upstream returned non-streaming {contentType ?? "response"}]\r\n{body}";
                 yield break;
             }
@@ -1317,6 +1379,23 @@ internal partial class MainForm : Form
                     if (!choice.TryGetProperty("delta", out JsonElement delta))
                         continue;
 
+                    // Some llama.cpp / OpenAI-compatible servers emit chain-of-thought
+                    // tokens under "reasoning_content" (or "reasoning") and only put
+                    // the final answer under "content". Surface both so thinking models
+                    // don't appear to produce an empty response.
+                    if (delta.TryGetProperty("reasoning_content", out JsonElement rc))
+                    {
+                        string? rt = rc.GetString();
+                        if (!string.IsNullOrEmpty(rt))
+                            yield return rt;
+                    }
+                    else if (delta.TryGetProperty("reasoning", out JsonElement r))
+                    {
+                        string? rt = r.GetString();
+                        if (!string.IsNullOrEmpty(rt))
+                            yield return rt;
+                    }
+
                     if (delta.TryGetProperty("content", out JsonElement content))
                     {
                         string? text = content.GetString();
@@ -1334,5 +1413,53 @@ internal partial class MainForm : Form
         _txtTestPrompt.Clear();
         _txtTestResponse.Clear();
         _lblTestStatus.Text = "Ready.";
+    }
+
+    /// <summary>
+    /// Attempts to extract the assistant message text from a non-streaming
+    /// /v1/chat/completions response body. Returns null if the JSON doesn't
+    /// match that shape.
+    /// </summary>
+    private static string? TryExtractNonStreamingContent(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+            return null;
+
+        JsonDocument doc;
+        try { doc = JsonDocument.Parse(body); }
+        catch (JsonException) { return null; }
+
+        using (doc)
+        {
+            if (!doc.RootElement.TryGetProperty("choices", out JsonElement choices)
+                || choices.ValueKind != JsonValueKind.Array
+                || choices.GetArrayLength() == 0)
+            {
+                return null;
+            }
+
+            var sb = new StringBuilder();
+            foreach (JsonElement choice in choices.EnumerateArray())
+            {
+                if (!choice.TryGetProperty("message", out JsonElement message))
+                    continue;
+
+                if (message.TryGetProperty("reasoning_content", out JsonElement rc))
+                {
+                    string? rt = rc.GetString();
+                    if (!string.IsNullOrEmpty(rt))
+                        sb.Append(rt);
+                }
+
+                if (message.TryGetProperty("content", out JsonElement content))
+                {
+                    string? text = content.GetString();
+                    if (!string.IsNullOrEmpty(text))
+                        sb.Append(text);
+                }
+            }
+
+            return sb.Length > 0 ? sb.ToString() : null;
+        }
     }
 }

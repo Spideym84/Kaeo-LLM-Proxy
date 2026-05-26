@@ -88,6 +88,17 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
     }
 
     /// <summary>
+    /// Returns whether heartbeats should be emitted for the given model, combining the
+    /// global toggle with the per-mapping <see cref="ModelMapping.EnableHeartbeats"/> flag.
+    /// </summary>
+    private bool ShouldEmitHeartbeats(string modelName)
+    {
+        if (!_settings.EnableStreamingHeartbeats) return false;
+        ModelMapping? mapping = _settings.FindModelMapping(modelName);
+        return mapping?.EnableHeartbeats ?? true;
+    }
+
+    /// <summary>
     /// Checks if the upstream error response indicates a context size overflow.
     /// Returns true if the error message contains "context" and "exceeded" or similar patterns.
     /// </summary>
@@ -388,9 +399,10 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                 await CopyStreamWithSseHeartbeatsAsync(
                     upstreamStream,
                     buffer,
-                    _settings.EnableStreamingHeartbeats,
+                    ShouldEmitHeartbeats(originalModel),
                     _settings.StreamingHeartbeatIntervalSeconds,
-                    ct);
+                    ct,
+                    () => _stats.IncrementHeartbeat(originalModel));
             }
             else
             {
@@ -410,9 +422,10 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                 await CopyStreamWithSseHeartbeatsAsync(
                     upstreamStream,
                     countingStream,
-                    _settings.EnableStreamingHeartbeats,
+                    ShouldEmitHeartbeats(originalModel),
                     _settings.StreamingHeartbeatIntervalSeconds,
-                    ct);
+                    ct,
+                    () => _stats.IncrementHeartbeat(originalModel));
             }
             else
             {
@@ -442,7 +455,8 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         Stream destination,
         bool enableHeartbeats,
         int heartbeatIntervalSeconds,
-        CancellationToken ct)
+        CancellationToken ct,
+        Action? onHeartbeatSent = null)
     {
         byte[] buffer = new byte[81920];
         byte[] heartbeatBytes = Encoding.UTF8.GetBytes(": kaeo-heartbeat\n\n");
@@ -462,6 +476,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
                 await destination.WriteAsync(heartbeatBytes, ct);
                 await destination.FlushAsync(ct);
+                onHeartbeatSent?.Invoke();
             }
 
             int bytesRead = await readTask;
@@ -1105,9 +1120,10 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                     log,
                     _settings.CollectResponseDetails,
                     responseText => RedactResponseBodyForLog(responseText, ollamaReq.Model),
-                    _settings.EnableStreamingHeartbeats,
+                    ShouldEmitHeartbeats(ollamaReq.Model),
                     _settings.StreamingHeartbeatIntervalSeconds,
-                    ct);
+                    ct,
+                    () => _stats.IncrementHeartbeat(ollamaReq.Model));
             }
             else
             {
@@ -1317,7 +1333,8 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         Func<string, string> redactResponse,
         bool enableHeartbeats,
         int heartbeatIntervalSeconds,
-        CancellationToken ct)
+        CancellationToken ct,
+        Action? onHeartbeatSent = null)
     {
         await using Stream stream = await upstreamResp.Content.ReadAsStreamAsync(ct);
         using StreamReader reader = new(stream, Encoding.UTF8);
@@ -1336,7 +1353,8 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                 modelName,
                 enableHeartbeats,
                 heartbeatInterval,
-                ct);
+                ct,
+                onHeartbeatSent);
             if (line is null) break;          // end of stream
             if (string.IsNullOrWhiteSpace(line)) continue;
 
@@ -1407,7 +1425,8 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         string modelName,
         bool enableHeartbeats,
         TimeSpan heartbeatInterval,
-        CancellationToken ct)
+        CancellationToken ct,
+        Action? onHeartbeatSent = null)
     {
         Task<string?> readTask = reader.ReadLineAsync(ct).AsTask();
 
@@ -1427,6 +1446,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
             await writer.WriteLineAsync(JsonSerializer.Serialize(heartbeatChunk, _jsonOptions));
             await writer.FlushAsync(ct);
+            onHeartbeatSent?.Invoke();
         }
 
         return await readTask;

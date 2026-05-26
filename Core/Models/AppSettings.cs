@@ -35,6 +35,12 @@ internal sealed class ModelMapping
 
     public bool EnableThinkingCompatibility { get; set; } = true;
 
+    /// <summary>
+    /// When true, this mapping participates in streaming heartbeat emission while waiting for upstream tokens.
+    /// The global <see cref="AppSettings.EnableStreamingHeartbeats"/> must also be enabled. Default: true.
+    /// </summary>
+    public bool EnableHeartbeats { get; set; } = true;
+
     /// <summary>Upstream backend for this mapping. Only LlamaCpp is supported currently.</summary>
     public UpstreamType UpstreamType { get; set; } = UpstreamType.LlamaCpp;
 
