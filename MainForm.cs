@@ -1044,9 +1044,26 @@ internal partial class MainForm : Form
         string? upstreamUrl = _testModelToUpstream.TryGetValue(model, out string? discoveredUrl)
             ? discoveredUrl
             : null;
+
+        // 1) Exact match on proxy or model name.
         ModelMapping? mapping = _settings.ModelMappings.FirstOrDefault(m =>
             string.Equals(m.ProxyName, model, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(m.ModelName, model, StringComparison.OrdinalIgnoreCase));
+
+        // 2) Fall back to whichever mapping owns the upstream this model came from.
+        //    The test console dropdown shows raw upstream model IDs which often differ
+        //    from any configured ProxyName/ModelName, so we use the upstream URL as a
+        //    secondary key. If multiple mappings share the same upstream URL, prefer
+        //    one whose ModelName is empty (i.e. a passthrough mapping for that server),
+        //    otherwise take the first match.
+        if (mapping is null && !string.IsNullOrWhiteSpace(upstreamUrl))
+        {
+            List<ModelMapping> sameUpstream = [.. _settings.ModelMappings.Where(m =>
+                string.Equals(m.UpstreamUrl, upstreamUrl, StringComparison.OrdinalIgnoreCase))];
+
+            mapping = sameUpstream.FirstOrDefault(m => string.IsNullOrWhiteSpace(m.ModelName))
+                      ?? sameUpstream.FirstOrDefault();
+        }
 
         if (string.IsNullOrWhiteSpace(upstreamUrl))
             upstreamUrl = mapping?.UpstreamUrl;
