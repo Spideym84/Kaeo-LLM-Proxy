@@ -22,11 +22,17 @@ internal sealed class InstructionSet
     public string? Description { get; set; }
 }
 
-/// <summary>Maps an Ollama model name to a specific upstream server and llama.cpp model name.</summary>
+/// <summary>Maps an externally exposed proxy model name to a specific upstream server and model name.</summary>
 internal sealed class ModelMapping
 {
-    public string OllamaName { get; set; } = string.Empty;
-    public string LlamaCppName { get; set; } = string.Empty;
+    /// <summary>The model name as exposed by this proxy to clients (e.g. "llama3").</summary>
+    [JsonPropertyName("OllamaName")]
+    public string ProxyName { get; set; } = string.Empty;
+
+    /// <summary>The actual model name to request from the upstream server (e.g. "llama-3-8b").</summary>
+    [JsonPropertyName("LlamaCppName")]
+    public string ModelName { get; set; } = string.Empty;
+
     public bool EnableThinkingCompatibility { get; set; } = true;
 
     /// <summary>Upstream backend for this mapping. Only LlamaCpp is supported currently.</summary>
@@ -249,23 +255,23 @@ internal sealed class AppSettings
     {
         foreach (ModelMapping mapping in ModelMappings)
         {
-            if (string.Equals(mapping.OllamaName, requestedModel, StringComparison.OrdinalIgnoreCase))
-                return mapping.LlamaCppName;
+            if (string.Equals(mapping.ProxyName, requestedModel, StringComparison.OrdinalIgnoreCase))
+                return mapping.ModelName;
         }
 
         return requestedModel;
     }
 
     /// <summary>
-    /// Finds a model mapping by either the exposed Ollama name or the mapped llama.cpp model name.
+    /// Finds a model mapping by either the exposed proxy name or the upstream model name.
     /// Returns null when no configured mapping matches.
     /// </summary>
     public ModelMapping? FindModelMapping(string requestedModel)
     {
         foreach (ModelMapping mapping in ModelMappings)
         {
-            if (string.Equals(mapping.OllamaName, requestedModel, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(mapping.LlamaCppName, requestedModel, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(mapping.ProxyName, requestedModel, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(mapping.ModelName, requestedModel, StringComparison.OrdinalIgnoreCase))
             {
                 return mapping;
             }
@@ -352,14 +358,14 @@ internal sealed class AppSettings
         sb.AppendLine($"  \"StreamingHeartbeatIntervalSeconds\": {StreamingHeartbeatIntervalSeconds},");
         sb.AppendLine();
         sb.AppendLine("  // \u2500\u2500\u2500 Model Name Mappings \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
-        sb.AppendLine("  // Each entry maps an Ollama model name to a specific upstream server and llama.cpp model.");
+        sb.AppendLine("  // Each entry maps an externally exposed proxy model name to a specific upstream server and upstream model.");
         sb.AppendLine("  // Each mapping MUST specify its own UpstreamUrl.");
         sb.AppendLine("  // EnableThinkingCompatibility strips assistant response-prefill turns for models that reject them when thinking is enabled.");
         sb.AppendLine("  // UpstreamTimeoutSeconds: defaults to 300 if not specified or zero.");
         sb.AppendLine("  // InstructionSetName: optional reference to an instruction set (defined below) to inject into requests.");
         sb.AppendLine("  // RedactRequestBodies / RedactResponseBodies: replace captured request/response bodies with a redaction marker.");
         sb.AppendLine("  // RedactSensitiveJsonFields: redacts API keys, authorization values, prompts, messages, and similar JSON fields.");
-        sb.AppendLine("  // Example:");
+        sb.AppendLine("  // Example (JSON field names remain OllamaName/LlamaCppName for backward compatibility):");
         sb.AppendLine("  //   { \"OllamaName\": \"llama3\", \"LlamaCppName\": \"llama-3-8b\", \"EnableThinkingCompatibility\": true,");
         sb.AppendLine("  //     \"UpstreamUrl\": \"http://192.168.1.10:8080\", \"UpstreamTimeoutSeconds\": 120,");
         sb.AppendLine("  //     \"InstructionSetName\": \"CodeExpert\", \"RedactRequestBodies\": true,");

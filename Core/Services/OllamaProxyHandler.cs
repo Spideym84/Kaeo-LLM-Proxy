@@ -50,11 +50,11 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         // Try exact match first
         foreach (ModelMapping m in _settings.ModelMappings)
         {
-            if (string.Equals(m.OllamaName, ollamaModel, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(m.ProxyName, ollamaModel, StringComparison.OrdinalIgnoreCase))
             {
                 if (string.IsNullOrWhiteSpace(m.UpstreamUrl))
                     throw new InvalidOperationException(
-                        $"Model mapping '{m.OllamaName}' has no upstream URL configured. " +
+                        $"Model mapping '{m.ProxyName}' has no upstream URL configured. " +
                         "Each mapping must specify its own UpstreamUrl.");
 
                 int timeout = m.UpstreamTimeoutSeconds > 0 ? m.UpstreamTimeoutSeconds : 300;
@@ -69,7 +69,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             ModelMapping fallback = _settings.ModelMappings[0];
             if (string.IsNullOrWhiteSpace(fallback.UpstreamUrl))
                 throw new InvalidOperationException(
-                    $"Model mapping '{fallback.OllamaName}' has no upstream URL configured. " +
+                    $"Model mapping '{fallback.ProxyName}' has no upstream URL configured. " +
                     "Each mapping must specify its own UpstreamUrl.");
 
             int timeout = fallback.UpstreamTimeoutSeconds > 0 ? fallback.UpstreamTimeoutSeconds : 300;
@@ -78,7 +78,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
         throw new InvalidOperationException(
             $"No mapping found for model '{ollamaModel}'. " +
-            "Add a mapping in settings with OllamaName, LlamaCppName, and UpstreamUrl.");
+            "Add a mapping in settings with ProxyName, ModelName, and UpstreamUrl.");
     }
 
     private bool ShouldApplyThinkingCompatibility(string modelName)

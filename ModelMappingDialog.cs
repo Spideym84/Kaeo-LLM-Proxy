@@ -17,8 +17,8 @@ internal sealed class ModelMappingDialog : Form
     private const string NoneLabel = "(None)";
 
     private readonly TableLayoutPanel _tlpMain = new();
-    private readonly Label _lblOllamaName = new();
-    private readonly Label _lblOllamaNameValue = new();
+    private readonly Label _lblProxyName = new();
+    private readonly Label _lblProxyNameValue = new();
     private readonly Label _lblInstructionSet = new();
     private readonly ComboBox _cmbInstructionSet = new();
     private readonly CheckBox _chkRedactRequestBodies = new();
@@ -100,8 +100,8 @@ internal sealed class ModelMappingDialog : Form
         _tlpMain.Dock = DockStyle.Fill;
         _tlpMain.Padding = new Padding(8);
 
-        _tlpMain.Controls.Add(_lblOllamaName, 0, 0);
-        _tlpMain.Controls.Add(_lblOllamaNameValue, 1, 0);
+        _tlpMain.Controls.Add(_lblProxyName, 0, 0);
+        _tlpMain.Controls.Add(_lblProxyNameValue, 1, 0);
         _tlpMain.Controls.Add(_lblInstructionSet, 0, 1);
         _tlpMain.Controls.Add(_cmbInstructionSet, 1, 1);
         _tlpMain.SetColumnSpan(_chkRedactRequestBodies, 2);
@@ -113,15 +113,15 @@ internal sealed class ModelMappingDialog : Form
         _tlpMain.SetColumnSpan(_flpButtons, 2);
         _tlpMain.Controls.Add(_flpButtons, 0, 5);
 
-        _lblOllamaName.Anchor = AnchorStyles.Left | AnchorStyles.Right;
-        _lblOllamaName.AutoSize = true;
-        _lblOllamaName.Margin = new Padding(0, 4, 8, 4);
-        _lblOllamaName.Text = "Model:";
+        _lblProxyName.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblProxyName.AutoSize = true;
+        _lblProxyName.Margin = new Padding(0, 4, 8, 4);
+        _lblProxyName.Text = "Proxy Name:";
 
-        _lblOllamaNameValue.Anchor = AnchorStyles.Left | AnchorStyles.Right;
-        _lblOllamaNameValue.AutoSize = true;
-        _lblOllamaNameValue.Margin = new Padding(0, 4, 0, 4);
-        _lblOllamaNameValue.Font = new Font(Font, FontStyle.Bold);
+        _lblProxyNameValue.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblProxyNameValue.AutoSize = true;
+        _lblProxyNameValue.Margin = new Padding(0, 4, 0, 4);
+        _lblProxyNameValue.Font = new Font(Font, FontStyle.Bold);
 
         _lblInstructionSet.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         _lblInstructionSet.AutoSize = true;
@@ -193,9 +193,9 @@ internal sealed class ModelMappingDialog : Form
 
         using ModelMappingDialog dlg = new();
         dlg.PopulateInstructionSets(instructionSets);
-        dlg._lblOllamaNameValue.Text = string.IsNullOrWhiteSpace(mapping.OllamaName)
+        dlg._lblProxyNameValue.Text = string.IsNullOrWhiteSpace(mapping.ProxyName)
             ? "(unnamed)"
-            : mapping.OllamaName;
+            : mapping.ProxyName;
         dlg.InstructionSetName = mapping.InstructionSetName;
         dlg.RedactRequestBodies = mapping.RedactRequestBodies;
         dlg.RedactResponseBodies = mapping.RedactResponseBodies;

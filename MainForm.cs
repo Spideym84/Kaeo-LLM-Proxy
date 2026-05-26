@@ -475,7 +475,7 @@ internal partial class MainForm : Form
         foreach (ModelMapping mapping in _settings.ModelMappings)
         {
             int idx = _dgvMappings.Rows.Add(
-                mapping.OllamaName,
+                mapping.ProxyName,
                 string.Empty,
                 mapping.EnableThinkingCompatibility,
                 mapping.UpstreamUrl,
@@ -488,8 +488,8 @@ internal partial class MainForm : Form
             // on the row Tag — these fields are edited in the modal Configure dialog.
             row.Tag = new ModelMapping
             {
-                OllamaName = mapping.OllamaName,
-                LlamaCppName = mapping.LlamaCppName,
+                ProxyName = mapping.ProxyName,
+                ModelName = mapping.ModelName,
                 EnableThinkingCompatibility = mapping.EnableThinkingCompatibility,
                 UpstreamUrl = mapping.UpstreamUrl,
                 UpstreamTimeoutSeconds = mapping.UpstreamTimeoutSeconds,
@@ -505,12 +505,12 @@ internal partial class MainForm : Form
 
             // The combo cell needs the item to exist before we can set a value.
             DataGridViewComboBoxCell cell =
-                (DataGridViewComboBoxCell)row.Cells[_colLlamaCppName.Name];
+                (DataGridViewComboBoxCell)row.Cells[_colModelName.Name];
 
-            if (!cell.Items.Contains(mapping.LlamaCppName))
-                cell.Items.Add(mapping.LlamaCppName);
+            if (!cell.Items.Contains(mapping.ModelName))
+                cell.Items.Add(mapping.ModelName);
 
-            cell.Value = mapping.LlamaCppName;
+            cell.Value = mapping.ModelName;
         }
 
         // Load instructions list
@@ -603,11 +603,11 @@ internal partial class MainForm : Form
         _settings.Logging.LogRetentionHours = logRetentionHours;
 
         _settings.ModelMappings.Clear();
-        HashSet<string> seenOllamaNames = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> seenProxyNames = new(StringComparer.OrdinalIgnoreCase);
         foreach (DataGridViewRow row in _dgvMappings.Rows)
         {
-            string? ollamaName  = row.Cells[_colOllamaName.Name].Value?.ToString();
-            string? llamaName   = row.Cells[_colLlamaCppName.Name].Value?.ToString();
+            string? proxyName  = row.Cells[_colProxyName.Name].Value?.ToString();
+            string? modelName  = row.Cells[_colModelName.Name].Value?.ToString();
             bool enableThinkingCompatibility = row.Cells[_colThinkingCompatibility.Name].Value as bool? ?? true;
             string? upstreamUrl = row.Cells[_colUpstreamUrl.Name].Value?.ToString() ?? string.Empty;
             string? timeoutStr  = row.Cells[_colUpstreamTimeout.Name].Value?.ToString();
@@ -616,14 +616,14 @@ internal partial class MainForm : Form
             // Advanced per-model settings live on the row Tag and are edited via the Configure dialog.
             ModelMapping? advanced = row.Tag as ModelMapping;
 
-            if (!string.IsNullOrWhiteSpace(ollamaName) && !string.IsNullOrWhiteSpace(llamaName))
+            if (!string.IsNullOrWhiteSpace(proxyName) && !string.IsNullOrWhiteSpace(modelName))
             {
-                string trimmedOllama = ollamaName.Trim();
+                string trimmedProxy = proxyName.Trim();
 
-                if (!seenOllamaNames.Add(trimmedOllama))
+                if (!seenProxyNames.Add(trimmedProxy))
                 {
                     MessageBox.Show(
-                        $"Duplicate Ollama model name '{trimmedOllama}'. Model names must be unique.",
+                        $"Duplicate proxy model name '{trimmedProxy}'. Proxy names must be unique.",
                         "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
@@ -632,7 +632,7 @@ internal partial class MainForm : Form
                 if (string.IsNullOrWhiteSpace(upstreamUrl) ||
                     !Uri.TryCreate(upstreamUrl, UriKind.Absolute, out _))
                 {
-                    MessageBox.Show($"Model mapping '{trimmedOllama}' requires a valid upstream URL.", "Validation",
+                    MessageBox.Show($"Model mapping '{trimmedProxy}' requires a valid upstream URL.", "Validation",
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
@@ -646,8 +646,8 @@ internal partial class MainForm : Form
 
                 _settings.ModelMappings.Add(new ModelMapping
                 {
-                    OllamaName             = trimmedOllama,
-                    LlamaCppName           = llamaName.Trim(),
+                    ProxyName              = trimmedProxy,
+                    ModelName              = modelName.Trim(),
                     EnableThinkingCompatibility = enableThinkingCompatibility,
                     UpstreamUrl            = upstreamUrl.Trim(),
                     UpstreamTimeoutSeconds = timeoutSec,
@@ -676,8 +676,8 @@ internal partial class MainForm : Form
 
     private void BtnAddMapping_Click(object? sender, EventArgs e)
     {
-        // Seed the llama.cpp combo with whatever models are already loaded.
-        // Columns: [0] OllamaName, [1] LlamaCppName, [2] ThinkingCompatibility, [3] UpstreamUrl, [4] Timeout, [5] UpstreamType
+        // Seed the model combo with whatever models are already loaded.
+        // Columns: [0] ProxyName, [1] ModelName, [2] ThinkingCompatibility, [3] UpstreamUrl, [4] Timeout, [5] UpstreamType
         // Advanced settings (instruction set, redaction) live on row.Tag and are edited via the Configure dialog.
         int idx = _dgvMappings.Rows.Add(string.Empty, string.Empty, true, string.Empty, string.Empty, "LlamaCpp");
 
@@ -686,12 +686,12 @@ internal partial class MainForm : Form
 
         // Ensure the value is valid inside the combo items.
         DataGridViewComboBoxCell modelCell =
-            (DataGridViewComboBoxCell)row.Cells[_colLlamaCppName.Name];
+            (DataGridViewComboBoxCell)row.Cells[_colModelName.Name];
 
         if (modelCell.Items.Count > 0 && modelCell.Value is null)
             modelCell.Value = modelCell.Items[0];
 
-        _dgvMappings.CurrentCell = row.Cells[_colOllamaName.Name];
+        _dgvMappings.CurrentCell = row.Cells[_colProxyName.Name];
         _dgvMappings.BeginEdit(true);
     }
 
@@ -729,8 +729,8 @@ internal partial class MainForm : Form
             row.Tag = mapping;
         }
 
-        // Reflect the current Ollama name in the dialog header.
-        mapping.OllamaName = row.Cells[_colOllamaName.Name].Value?.ToString() ?? string.Empty;
+        // Reflect the current proxy name in the dialog header.
+        mapping.ProxyName = row.Cells[_colProxyName.Name].Value?.ToString() ?? string.Empty;
 
         if (ModelMappingDialog.ShowConfigureDialog(this, mapping, _settings.InstructionSets))
         {
@@ -844,8 +844,8 @@ internal partial class MainForm : Form
                     continue;
                 }
 
-                // Update this row's llama.cpp combo cell
-                DataGridViewComboBoxCell cell = (DataGridViewComboBoxCell)row.Cells[_colLlamaCppName.Name];
+                // Update this row's model combo cell
+                DataGridViewComboBoxCell cell = (DataGridViewComboBoxCell)row.Cells[_colModelName.Name];
                 string? current = cell.Value?.ToString();
 
                 cell.Items.Clear();
@@ -1156,8 +1156,8 @@ internal partial class MainForm : Form
     {
         // Find the mapping for this model to get the correct upstream URL
         var mapping = _settings.ModelMappings.FirstOrDefault(m =>
-            string.Equals(m.OllamaName, model, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(m.LlamaCppName, model, StringComparison.OrdinalIgnoreCase));
+            string.Equals(m.ProxyName, model, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(m.ModelName, model, StringComparison.OrdinalIgnoreCase));
 
         if (mapping is null || string.IsNullOrWhiteSpace(mapping.UpstreamUrl))
         {

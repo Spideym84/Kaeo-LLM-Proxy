@@ -89,8 +89,8 @@ partial class MainForm
         _txtMaxLogs = new TextBox();
         _lblMappings = new Label();
         _dgvMappings = new DataGridView();
-        _colOllamaName = new DataGridViewTextBoxColumn();
-        _colLlamaCppName = new DataGridViewComboBoxColumn();
+        _colProxyName = new DataGridViewTextBoxColumn();
+        _colModelName = new DataGridViewComboBoxColumn();
         _colThinkingCompatibility = new DataGridViewCheckBoxColumn();
         _colUpstreamUrl = new DataGridViewTextBoxColumn();
         _colUpstreamTimeout = new DataGridViewTextBoxColumn();
@@ -651,12 +651,12 @@ partial class MainForm
         _lblMappings.AutoSize = true;
         _lblMappings.Margin = new Padding(4, 8, 4, 4);
         _lblMappings.Name = "_lblMappings";
-        _lblMappings.Text = "Model Name Mappings (Ollama → llama.cpp):";
+        _lblMappings.Text = "Model Name Mappings (Proxy → Model):";
 
         _dgvMappings.AllowUserToAddRows = false;
         _dgvMappings.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-        _dgvMappings.Columns.Add(_colOllamaName);
-        _dgvMappings.Columns.Add(_colLlamaCppName);
+        _dgvMappings.Columns.Add(_colProxyName);
+        _dgvMappings.Columns.Add(_colModelName);
         _dgvMappings.Columns.Add(_colThinkingCompatibility);
         _dgvMappings.Columns.Add(_colUpstreamUrl);
         _dgvMappings.Columns.Add(_colUpstreamTimeout);
@@ -667,14 +667,14 @@ partial class MainForm
         _dgvMappings.Name = "_dgvMappings";
         _dgvMappings.CellDoubleClick += DgvMappings_CellDoubleClick;
 
-        _colOllamaName.HeaderText = "Ollama Name";
-        _colOllamaName.Name = "_colOllamaName";
+        _colProxyName.HeaderText = "Proxy Name";
+        _colProxyName.Name = "_colProxyName";
 
-        _colLlamaCppName.DisplayStyleForCurrentCellOnly = true;
-        _colLlamaCppName.FlatStyle = FlatStyle.Flat;
-        _colLlamaCppName.HeaderText = "llama.cpp Model";
-        _colLlamaCppName.Name = "_colLlamaCppName";
-        _colLlamaCppName.FillWeight = 120;
+        _colModelName.DisplayStyleForCurrentCellOnly = true;
+        _colModelName.FlatStyle = FlatStyle.Flat;
+        _colModelName.HeaderText = "Model Name";
+        _colModelName.Name = "_colModelName";
+        _colModelName.FillWeight = 120;
 
         _colThinkingCompatibility.HeaderText = "Thinking Fixes";
         _colThinkingCompatibility.Name = "_colThinkingCompatibility";
@@ -1132,8 +1132,8 @@ partial class MainForm
     private TextBox _txtMaxLogs;
     private Label _lblMappings;
     private DataGridView _dgvMappings;
-    private DataGridViewTextBoxColumn _colOllamaName;
-    private DataGridViewComboBoxColumn _colLlamaCppName;
+    private DataGridViewTextBoxColumn _colProxyName;
+    private DataGridViewComboBoxColumn _colModelName;
     private DataGridViewCheckBoxColumn _colThinkingCompatibility;
     private DataGridViewTextBoxColumn _colUpstreamUrl;
     private DataGridViewTextBoxColumn _colUpstreamTimeout;
