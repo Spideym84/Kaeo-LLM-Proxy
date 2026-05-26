@@ -1005,7 +1005,10 @@ internal partial class MainForm : Form
         }
         catch (Exception ex)
         {
-            _lblTestStatus.Text = $"Model load failed: {ex.Message}";
+            System.Diagnostics.Debug.WriteLine($"[LoadTestModels] {ex}");
+            if (System.Diagnostics.Debugger.IsAttached)
+                System.Diagnostics.Debugger.Break();
+            _lblTestStatus.Text = $"Model load failed: {ex.GetType().Name}: {ex.Message}";
         }
     }
 
@@ -1035,14 +1038,18 @@ internal partial class MainForm : Form
         {
             double temperature = (double)_nudTestTemp.Value;
             var sw = System.Diagnostics.Stopwatch.StartNew();
+            int tokenCount = 0;
 
             await foreach (string token in StreamChatAsync(model, prompt, temperature))
             {
+                tokenCount++;
                 _txtTestResponse.AppendText(token);
             }
 
             sw.Stop();
-            _lblTestStatus.Text = $"Done in {sw.Elapsed.TotalSeconds:F2}s.";
+            _lblTestStatus.Text = tokenCount == 0
+                ? $"Done in {sw.Elapsed.TotalSeconds:F2}s but no tokens were received from the upstream."
+                : $"Done in {sw.Elapsed.TotalSeconds:F2}s ({tokenCount} chunks).";
         }
         catch (OperationCanceledException)
         {
@@ -1050,13 +1057,29 @@ internal partial class MainForm : Form
         }
         catch (Exception ex)
         {
-            _lblTestStatus.Text = $"Error: {ex.Message}";
-            _txtTestResponse.AppendText($"\r\n\r\n[ERROR]\r\n{ex}");
+            HandleTestConsoleException(ex);
         }
         finally
         {
             _btnTestSend.Enabled = true;
         }
+    }
+
+    private void HandleTestConsoleException(Exception ex)
+    {
+        if (System.Diagnostics.Debugger.IsAttached)
+            System.Diagnostics.Debugger.Break();
+
+        System.Diagnostics.Debug.WriteLine($"[TestConsole] {ex}");
+
+        _lblTestStatus.Text = $"Error: {ex.GetType().Name}: {ex.Message}";
+        _txtTestResponse.AppendText($"\r\n\r\n[ERROR] {ex.GetType().FullName}: {ex.Message}\r\n{ex}");
+
+        MessageBox.Show(
+            $"{ex.GetType().FullName}: {ex.Message}\r\n\r\n{ex.StackTrace}",
+            "Test Console Error",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Error);
     }
 
     /// <summary>

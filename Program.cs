@@ -13,6 +13,17 @@ internal static class Program
         ApplicationConfiguration.Initialize();
         Application.SetColorMode(SystemColorMode.System);
 
+        // Surface ALL unhandled exceptions instead of silently swallowing them.
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += (_, e) => ShowUnhandledException("UI thread", e.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            ShowUnhandledException("AppDomain", e.ExceptionObject as Exception);
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            ShowUnhandledException("Unobserved Task", e.Exception);
+            e.SetObserved();
+        };
+
         AppSettings settings = AppSettings.Load();
 
         if (!settings.AllowMultipleInstances)
@@ -50,6 +61,30 @@ internal static class Program
         catch
         {
             return SystemIcons.Application;
+        }
+    }
+
+    private static void ShowUnhandledException(string source, Exception? ex)
+    {
+        if (ex is null)
+            return;
+
+        if (System.Diagnostics.Debugger.IsAttached)
+            System.Diagnostics.Debugger.Break();
+
+        System.Diagnostics.Debug.WriteLine($"[UNHANDLED:{source}] {ex}");
+
+        try
+        {
+            MessageBox.Show(
+                $"An unhandled exception occurred ({source}):\n\n{ex.GetType().FullName}: {ex.Message}\n\n{ex.StackTrace}",
+                "Unhandled Exception",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+        catch
+        {
+            // Last-resort: never let the handler itself crash the process.
         }
     }
 }
