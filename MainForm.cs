@@ -1108,10 +1108,12 @@ internal partial class MainForm : Form
 
         int timeout = mapping is { UpstreamTimeoutSeconds: > 0 } ? mapping.UpstreamTimeoutSeconds : 300;
 
+        // Use Timeout.InfiniteTimeSpan so HttpClient doesn't pre-empt our own per-read
+        // cancellation; we manage timeouts ourselves below.
         using var client = new HttpClient
         {
             BaseAddress = new Uri(upstreamUrl),
-            Timeout = TimeSpan.FromSeconds(timeout),
+            Timeout = Timeout.InfiniteTimeSpan,
         };
 
         var payload = new
@@ -1125,65 +1127,124 @@ internal partial class MainForm : Form
             },
         };
 
-        var reqMsg = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions")
+        using var reqMsg = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions")
         {
             Content = JsonContent.Create(payload),
         };
+        reqMsg.Headers.Accept.ParseAdd("text/event-stream");
 
-        using HttpResponseMessage resp = await client.SendAsync(
-            reqMsg, HttpCompletionOption.ResponseHeadersRead, ct);
+        // Overall request-level timeout so a stalled upstream cannot hang the UI forever.
+        using var requestCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        requestCts.CancelAfter(TimeSpan.FromSeconds(timeout));
 
-        if (!resp.IsSuccessStatusCode)
+        System.Diagnostics.Debug.WriteLine(
+            $"[TestConsole] POST {upstreamUrl.TrimEnd('/')}/v1/chat/completions model={model}");
+
+        HttpResponseMessage resp;
+        try
         {
-            string body = await resp.Content.ReadAsStringAsync(ct);
-            throw new InvalidOperationException(
-                $"Upstream returned {(int)resp.StatusCode}: {body}");
+            resp = await client.SendAsync(
+                reqMsg, HttpCompletionOption.ResponseHeadersRead, requestCts.Token);
+        }
+        catch (TaskCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"Upstream did not respond within {timeout}s while sending the request.");
         }
 
-        using var reader = new System.IO.StreamReader(
-            await resp.Content.ReadAsStreamAsync(ct));
-
-        string? line;
-        while ((line = await reader.ReadLineAsync(ct)) is not null)
+        using (resp)
         {
-            ct.ThrowIfCancellationRequested();
+            string? contentType = resp.Content.Headers.ContentType?.MediaType;
+            System.Diagnostics.Debug.WriteLine(
+                $"[TestConsole] <- HTTP {(int)resp.StatusCode} {resp.ReasonPhrase} content-type={contentType}");
 
-            if (string.IsNullOrWhiteSpace(line))
-                continue;
+            if (!resp.IsSuccessStatusCode)
+            {
+                string body = await resp.Content.ReadAsStringAsync(requestCts.Token);
+                throw new InvalidOperationException(
+                    $"Upstream returned {(int)resp.StatusCode} {resp.ReasonPhrase}: {body}");
+            }
 
-            if (!line.StartsWith("data:", StringComparison.Ordinal))
-                continue;
+            bool isSse = contentType != null
+                && contentType.Contains("event-stream", StringComparison.OrdinalIgnoreCase);
 
-            string data = line["data:".Length..].Trim();
-
-            if (data == "[DONE]")
+            if (!isSse)
+            {
+                // Upstream ignored stream=true (or returned an error/JSON body).
+                // Read the whole thing and surface it so the user sees something.
+                string body = await resp.Content.ReadAsStringAsync(requestCts.Token);
+                yield return $"[Upstream returned non-streaming {contentType ?? "response"}]\r\n{body}";
                 yield break;
-
-            JsonElement root;
-
-            try
-            {
-                root = JsonDocument.Parse(data).RootElement;
-            }
-            catch (JsonException)
-            {
-                continue;
             }
 
-            if (!root.TryGetProperty("choices", out JsonElement choices))
-                continue;
+            using var responseStream = await resp.Content.ReadAsStreamAsync(requestCts.Token);
+            using var reader = new System.IO.StreamReader(responseStream);
 
-            foreach (JsonElement choice in choices.EnumerateArray())
+            // Per-read inactivity timeout: if no bytes arrive for this long, fail.
+            TimeSpan inactivityTimeout = TimeSpan.FromSeconds(Math.Max(30, timeout / 4));
+
+            while (true)
             {
-                if (!choice.TryGetProperty("delta", out JsonElement delta))
+                ct.ThrowIfCancellationRequested();
+
+                using var readCts = CancellationTokenSource.CreateLinkedTokenSource(requestCts.Token);
+                readCts.CancelAfter(inactivityTimeout);
+
+                string? line;
+                try
+                {
+                    line = await reader.ReadLineAsync(readCts.Token);
+                }
+                catch (OperationCanceledException) when (
+                    readCts.IsCancellationRequested && !ct.IsCancellationRequested && !requestCts.IsCancellationRequested)
+                {
+                    throw new TimeoutException(
+                        $"No data received from upstream for {inactivityTimeout.TotalSeconds:F0}s. Aborting.");
+                }
+
+                if (line is null)
+                {
+                    System.Diagnostics.Debug.WriteLine("[TestConsole] stream ended without [DONE]");
+                    yield break;
+                }
+
+                if (string.IsNullOrWhiteSpace(line))
                     continue;
 
-                if (delta.TryGetProperty("content", out JsonElement content))
-                {
-                    string? text = content.GetString();
+                if (!line.StartsWith("data:", StringComparison.Ordinal))
+                    continue;
 
-                    if (!string.IsNullOrEmpty(text))
-                        yield return text;
+                string data = line["data:".Length..].Trim();
+
+                if (data == "[DONE]")
+                    yield break;
+
+                JsonElement root;
+
+                try
+                {
+                    root = JsonDocument.Parse(data).RootElement;
+                }
+                catch (JsonException)
+                {
+                    continue;
+                }
+
+                if (!root.TryGetProperty("choices", out JsonElement choices))
+                    continue;
+
+                foreach (JsonElement choice in choices.EnumerateArray())
+                {
+                    if (!choice.TryGetProperty("delta", out JsonElement delta))
+                        continue;
+
+                    if (delta.TryGetProperty("content", out JsonElement content))
+                    {
+                        string? text = content.GetString();
+
+                        if (!string.IsNullOrEmpty(text))
+                            yield return text;
+                    }
                 }
             }
         }
