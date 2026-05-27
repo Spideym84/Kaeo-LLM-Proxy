@@ -14,6 +14,7 @@ internal sealed class ProxyServer(OllamaProxyHandler handler) : IDisposable
     private CancellationTokenSource? _cts;
     private Task? _listenTask;
     private readonly OllamaProxyHandler _handler = handler;
+    private bool _disposed;
 
     public bool IsRunning { get; private set; }
 
@@ -21,6 +22,8 @@ internal sealed class ProxyServer(OllamaProxyHandler handler) : IDisposable
 
     public void Start(int port, string listenAddress = "localhost")
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
         if (IsRunning)
             return;
 
@@ -72,16 +75,26 @@ internal sealed class ProxyServer(OllamaProxyHandler handler) : IDisposable
             return;
 
         IsRunning = false;
-        _cts?.Cancel();
 
-        _listener?.Stop();
-        _listener?.Close();
+        CancellationTokenSource? cts = _cts;
+        HttpListener? listener = _listener;
+        Task? listenTask = _listenTask;
 
-        if (_listenTask is not null)
+        cts?.Cancel();
+
+        listener?.Stop();
+        listener?.Close();
+
+        if (listenTask is not null)
         {
-            try { await _listenTask.ConfigureAwait(false); }
+            try { await listenTask.ConfigureAwait(false); }
             catch (OperationCanceledException) { }
         }
+
+        cts?.Dispose();
+        _cts = null;
+        _listener = null;
+        _listenTask = null;
 
         StatusChanged?.Invoke(this, "Stopped");
     }
@@ -111,8 +124,21 @@ internal sealed class ProxyServer(OllamaProxyHandler handler) : IDisposable
 
     public void Dispose()
     {
-        _cts?.Cancel();
-        _cts?.Dispose();
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        IsRunning = false;
+
+        CancellationTokenSource? cts = _cts;
+        _cts = null;
+        _listenTask = null;
+
+        try { cts?.Cancel(); }
+        catch (ObjectDisposedException) { }
+        cts?.Dispose();
+
         _listener?.Close();
+        _listener = null;
     }
 }

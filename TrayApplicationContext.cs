@@ -19,6 +19,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ProxyServer _server;
     private readonly RequestLogStore _logStore;
     private MainForm? _mainForm;
+    private bool _disposed;
 
     public TrayApplicationContext() : this(AppSettings.Load()) { }
 
@@ -228,16 +229,16 @@ internal sealed class TrayApplicationContext : ApplicationContext
         Log.Information("Kaeo LLM Proxy shutting down");
         _trayIcon.Visible = false;
         await _server.StopAsync();
-        _trayIcon.Dispose();
-        _server.Dispose();
-        _logStore.Dispose();
-        _perfService.Dispose();
-        AppLogger.Shutdown();
         Application.Exit();
     }
 
     protected override void Dispose(bool disposing)
     {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+
         if (disposing)
         {
             _trayIcon.Dispose();
