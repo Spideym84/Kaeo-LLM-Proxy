@@ -116,6 +116,10 @@ partial class MainForm
         _txtAppLogRetain = new TextBox();
         _lblReqLogSize = new Label();
         _txtReqLogSize = new TextBox();
+        _lblRequestDbPath = new Label();
+        _tlpRequestDbPath = new TableLayoutPanel();
+        _txtRequestDbPath = new TextBox();
+        _btnBrowseRequestDb = new Button();
         _lblLogRetention = new Label();
         _txtLogRetention = new TextBox();
 
@@ -756,7 +760,7 @@ partial class MainForm
         _tlpLogging.Dock = DockStyle.Fill;
         _tlpLogging.Margin = new Padding(4);
         _tlpLogging.Name = "_tlpLogging";
-        _tlpLogging.RowCount = 6;
+        _tlpLogging.RowCount = 7;
         _tlpLogging.Controls.Add(_lblLogDir, 0, 0);
         _tlpLogging.Controls.Add(_txtLogDir, 1, 0);
         _tlpLogging.Controls.Add(_lblMinLevel, 0, 1);
@@ -767,8 +771,10 @@ partial class MainForm
         _tlpLogging.Controls.Add(_txtAppLogRetain, 1, 3);
         _tlpLogging.Controls.Add(_lblReqLogSize, 0, 4);
         _tlpLogging.Controls.Add(_txtReqLogSize, 1, 4);
-        _tlpLogging.Controls.Add(_lblLogRetention, 0, 5);
-        _tlpLogging.Controls.Add(_txtLogRetention, 1, 5);
+        _tlpLogging.Controls.Add(_lblRequestDbPath, 0, 5);
+        _tlpLogging.Controls.Add(_tlpRequestDbPath, 1, 5);
+        _tlpLogging.Controls.Add(_lblLogRetention, 0, 6);
+        _tlpLogging.Controls.Add(_txtLogRetention, 1, 6);
 
         _lblLogDir.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         _lblLogDir.AutoSize = true;
@@ -821,6 +827,32 @@ partial class MainForm
         _txtReqLogSize.Dock = DockStyle.Fill;
         _txtReqLogSize.Margin = new Padding(4, 6, 4, 4);
         _txtReqLogSize.Name = "_txtReqLogSize";
+
+        _lblRequestDbPath.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblRequestDbPath.AutoSize = true;
+        _lblRequestDbPath.Margin = new Padding(4, 8, 8, 4);
+        _lblRequestDbPath.Name = "_lblRequestDbPath";
+        _lblRequestDbPath.Text = "Request DB File:";
+
+        _tlpRequestDbPath.ColumnCount = 2;
+        _tlpRequestDbPath.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        _tlpRequestDbPath.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _tlpRequestDbPath.Controls.Add(_txtRequestDbPath, 0, 0);
+        _tlpRequestDbPath.Controls.Add(_btnBrowseRequestDb, 1, 0);
+        _tlpRequestDbPath.Dock = DockStyle.Fill;
+        _tlpRequestDbPath.Margin = new Padding(0);
+        _tlpRequestDbPath.Name = "_tlpRequestDbPath";
+        _tlpRequestDbPath.RowCount = 1;
+
+        _txtRequestDbPath.Dock = DockStyle.Fill;
+        _txtRequestDbPath.Margin = new Padding(4, 6, 4, 4);
+        _txtRequestDbPath.Name = "_txtRequestDbPath";
+
+        _btnBrowseRequestDb.AutoSize = true;
+        _btnBrowseRequestDb.Margin = new Padding(4, 4, 4, 4);
+        _btnBrowseRequestDb.Name = "_btnBrowseRequestDb";
+        _btnBrowseRequestDb.Text = "Browse…";
+        _btnBrowseRequestDb.Click += BtnBrowseRequestDb_Click;
 
         _lblLogRetention.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         _lblLogRetention.AutoSize = true;
@@ -1297,6 +1329,10 @@ partial class MainForm
     private TextBox _txtAppLogRetain;
     private Label _lblReqLogSize;
     private TextBox _txtReqLogSize;
+    private Label _lblRequestDbPath;
+    private TableLayoutPanel _tlpRequestDbPath;
+    private TextBox _txtRequestDbPath;
+    private Button _btnBrowseRequestDb;
     private Label _lblLogRetention;
     private TextBox _txtLogRetention;
 

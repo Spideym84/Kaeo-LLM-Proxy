@@ -126,6 +126,11 @@ internal sealed class LoggingSettings
     public int RequestLogFileSizeLimitMb { get; set; } = 50;
 
     /// <summary>
+    /// Full path of the active LiteDB request-log database file. Empty uses the default path under <see cref="LogDirectory"/>.
+    /// </summary>
+    public string RequestLogDatabasePath { get; set; } = string.Empty;
+
+    /// <summary>
     /// How long to retain request log entries before they are automatically deleted.
     /// Set to 0 to keep entries forever. Default: 72 hours (3 days).
     /// </summary>
@@ -135,6 +140,13 @@ internal sealed class LoggingSettings
     public string LogDirectory { get; set; } = Path.Combine(
         AppDomain.CurrentDomain.BaseDirectory,
         "Data", "logs");
+
+    public string GetRequestLogDatabasePath()
+    {
+        return string.IsNullOrWhiteSpace(RequestLogDatabasePath)
+            ? Path.Combine(LogDirectory, "requests", "requests_current.db")
+            : RequestLogDatabasePath;
+    }
 }
 
 /// <summary>Persisted application settings.</summary>
@@ -414,6 +426,10 @@ internal sealed class AppSettings
         sb.AppendLine("    // Archive the LiteDB request-log database when it reaches this size (MB).");
         sb.AppendLine("    // Min: 1  Max: 5000  Default: 50");
         sb.AppendLine($"    \"RequestLogFileSizeLimitMb\": {Logging.RequestLogFileSizeLimitMb},");
+        sb.AppendLine();
+        sb.AppendLine("    // Full path to the active LiteDB request-log database file.");
+        sb.AppendLine("    // Empty uses Data/logs/requests/requests_current.db under the application directory.");
+        sb.AppendLine($"    \"RequestLogDatabasePath\": \"{Logging.RequestLogDatabasePath.Replace("\\", "\\\\")}\",");
         sb.AppendLine();
         sb.AppendLine("    // How long to keep request log entries before automatic deletion.");
         sb.AppendLine("    // Set to 0 to retain forever. Default: 72 (3 days).");

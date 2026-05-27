@@ -633,6 +633,7 @@ internal partial class MainForm : Form
         _txtAppLogSize.Text = _settings.Logging.AppLogFileSizeLimitMb.ToString();
         _txtAppLogRetain.Text = _settings.Logging.AppLogRetainedFileCount.ToString();
         _txtReqLogSize.Text = _settings.Logging.RequestLogFileSizeLimitMb.ToString();
+        _txtRequestDbPath.Text = _settings.Logging.GetRequestLogDatabasePath();
         _txtLogRetention.Text = _settings.Logging.LogRetentionHours.ToString();
     }
 
@@ -655,6 +656,22 @@ internal partial class MainForm : Form
         if (string.IsNullOrWhiteSpace(_txtLogDir.Text))
         {
             MessageBox.Show("Log directory cannot be empty.", "Validation",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_txtRequestDbPath.Text))
+        {
+            MessageBox.Show("Request DB file path cannot be empty.", "Validation",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        string requestDbPath = _txtRequestDbPath.Text.Trim();
+        string? requestDbDirectory = Path.GetDirectoryName(requestDbPath);
+        if (string.IsNullOrWhiteSpace(requestDbDirectory))
+        {
+            MessageBox.Show("Request DB file path must include a directory.", "Validation",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
@@ -699,6 +716,7 @@ internal partial class MainForm : Form
         _settings.Logging.AppLogFileSizeLimitMb = appLogSize;
         _settings.Logging.AppLogRetainedFileCount = appLogRetain;
         _settings.Logging.RequestLogFileSizeLimitMb = reqLogSize;
+        _settings.Logging.RequestLogDatabasePath = requestDbPath;
         _settings.Logging.LogRetentionHours = logRetentionHours;
 
         _settings.ModelMappings.Clear();
@@ -765,10 +783,30 @@ internal partial class MainForm : Form
         // Re-apply logging config immediately so the new level/size/dir is active.
         AppLogger.Initialize(_settings.Logging);
 
-        MessageBox.Show("Settings saved. Restart the proxy for port changes to take effect.",
+        MessageBox.Show("Settings saved. Restart the app for request DB file path changes to take effect. Restart the proxy for port changes to take effect.",
             "Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
         RefreshStatus();
+    }
+
+    private void BtnBrowseRequestDb_Click(object? sender, EventArgs e)
+    {
+        using SaveFileDialog dialog = new()
+        {
+            AddExtension = true,
+            CheckPathExists = true,
+            DefaultExt = "db",
+            Filter = "LiteDB database (*.db)|*.db|All files (*.*)|*.*",
+            FileName = Path.GetFileName(_txtRequestDbPath.Text),
+            InitialDirectory = Directory.Exists(Path.GetDirectoryName(_txtRequestDbPath.Text))
+                ? Path.GetDirectoryName(_txtRequestDbPath.Text)
+                : _settings.Logging.LogDirectory,
+            OverwritePrompt = false,
+            Title = "Choose Request Log Database File",
+        };
+
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+            _txtRequestDbPath.Text = dialog.FileName;
     }
 
     private void BtnAddMapping_Click(object? sender, EventArgs e)

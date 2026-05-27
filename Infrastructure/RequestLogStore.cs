@@ -15,6 +15,7 @@ internal sealed class RequestLogStore : IDisposable
     private const string ExceptionCollectionName = "exceptions";
 
     private readonly string _logDir;
+    private readonly string _configuredDbPath;
     private readonly long _fileSizeLimitBytes;
     private readonly Lock _lock = new();
 
@@ -23,7 +24,9 @@ internal sealed class RequestLogStore : IDisposable
 
     public RequestLogStore(LoggingSettings settings)
     {
-        _logDir = Path.Combine(settings.LogDirectory, "requests");
+        _configuredDbPath = settings.GetRequestLogDatabasePath();
+        _logDir = Path.GetDirectoryName(_configuredDbPath)
+            ?? Path.Combine(settings.LogDirectory, "requests");
         _fileSizeLimitBytes = (long)settings.RequestLogFileSizeLimitMb * 1024 * 1024;
 
         Directory.CreateDirectory(_logDir);
@@ -152,7 +155,7 @@ internal sealed class RequestLogStore : IDisposable
 
     private void OpenDatabase()
     {
-        _currentDbPath = Path.Combine(_logDir, "requests_current.db");
+        _currentDbPath = _configuredDbPath;
 
         var connStr = new ConnectionString(_currentDbPath)
         {
@@ -188,7 +191,7 @@ internal sealed class RequestLogStore : IDisposable
         _db = null;
 
         string archive = Path.Combine(_logDir,
-            $"requests_{DateTime.UtcNow:yyyyMMdd_HHmmss}.db");
+            $"{Path.GetFileNameWithoutExtension(_currentDbPath)}_{DateTime.UtcNow:yyyyMMdd_HHmmss}{Path.GetExtension(_currentDbPath)}");
         File.Move(_currentDbPath, archive);
 
         OpenDatabase();
