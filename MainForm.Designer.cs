@@ -584,7 +584,7 @@ partial class MainForm
         _tlpSettings.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         _tlpSettings.Location = new Point(8, 8);
         _tlpSettings.Name = "_tlpSettings";
-        _tlpSettings.RowCount = 10;
+        _tlpSettings.RowCount = 11;
         _tlpSettings.Size = new Size(660, 460);
 
         _tlpSettings.Controls.Add(_lblListenPort, 0, 0);
@@ -605,8 +605,10 @@ partial class MainForm
         _tlpSettings.Controls.Add(_dgvMappings, 0, 7);
         _tlpSettings.SetColumnSpan(_flpMappingButtons, 2);
         _tlpSettings.Controls.Add(_flpMappingButtons, 0, 8);
+        _tlpSettings.SetColumnSpan(_grpLogging, 2);
+        _tlpSettings.Controls.Add(_grpLogging, 0, 9);
         _tlpSettings.SetColumnSpan(_btnSaveSettings, 2);
-        _tlpSettings.Controls.Add(_btnSaveSettings, 0, 9);
+        _tlpSettings.Controls.Add(_btnSaveSettings, 0, 10);
 
         _lblListenPort.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         _lblListenPort.AutoSize = true;
