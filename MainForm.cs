@@ -719,7 +719,6 @@ internal partial class MainForm : Form
         _settings.Logging.AppLogRetainedFileCount = appLogRetain;
         _settings.Logging.RequestLogFileSizeLimitMb = reqLogSize;
         _settings.Logging.ApplicationDatabasePath = requestDbPath;
-        _settings.Logging.RequestLogDatabasePath = null;
         _settings.Logging.LogRetentionHours = logRetentionHours;
 
         _settings.ModelMappings.Clear();
@@ -780,6 +779,7 @@ internal partial class MainForm : Form
 
         _database.SaveModelMappings(_settings.ModelMappings);
         _database.SaveInstructionSets(_settings.InstructionSets);
+        _database.SaveRuntimeSettings(_settings.CreateRuntimeSettings());
         _settings.Save();
         _stats.UpdateMaxEntries(maxLogs);
         _stats.UpdateRetentionHours(logRetentionHours);

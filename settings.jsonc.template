@@ -11,18 +11,6 @@
   // Default: "localhost"
   "ListenAddress": "localhost",
 
-  // Max recent request log entries kept in memory for the GUI.
-  // Min: 10  Max: 100000  Default: 500
-  "MaxLogEntries": 500,
-
-  // Automatically start the proxy when the application launches.
-  // Default: true
-  "AutoStartProxy": true,
-
-  // Open the dashboard window immediately on startup instead of sitting silently in the tray.
-  // Default: false
-  "StartWithDashboardOpen": false,
-
   // ─── Logging ──────────────────────────────────────────────────────────────
   "Logging": {
 

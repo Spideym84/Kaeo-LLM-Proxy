@@ -15,6 +15,8 @@ internal sealed class AppDatabase : IDisposable
     private const string ModelMappingCollectionName = "model_mappings";
     private const string InstructionSetCollectionName = "instruction_sets";
     private const string HeartbeatCollectionName = "heartbeats";
+    private const string RuntimeSettingsCollectionName = "runtime_settings";
+    private const string RuntimeSettingsId = "current";
 
     private readonly string _logDir;
     private readonly string _configuredDbPath;
@@ -132,17 +134,26 @@ internal sealed class AppDatabase : IDisposable
         }
     }
 
-    public void SeedDatabaseBackedSettings(AppSettings settings)
+    public RuntimeSettings LoadRuntimeSettings()
     {
         lock (_lock)
         {
-            ILiteCollection<ModelMapping> mappings = _db!.GetCollection<ModelMapping>(ModelMappingCollectionName);
-            foreach (ModelMapping mapping in settings.ModelMappings)
-                mappings.Upsert(mapping.ProxyName, mapping);
+            PersistedRuntimeSettings? persisted = _db!
+                .GetCollection<PersistedRuntimeSettings>(RuntimeSettingsCollectionName)
+                .FindById(RuntimeSettingsId);
 
-            ILiteCollection<InstructionSet> instructions = _db!.GetCollection<InstructionSet>(InstructionSetCollectionName);
-            foreach (InstructionSet instructionSet in settings.InstructionSets)
-                instructions.Upsert(instructionSet.Name, instructionSet);
+            return persisted?.ToRuntimeSettings() ?? new RuntimeSettings();
+        }
+    }
+
+    public void SaveRuntimeSettings(RuntimeSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        lock (_lock)
+        {
+            _db!.GetCollection<PersistedRuntimeSettings>(RuntimeSettingsCollectionName)
+                .Upsert(PersistedRuntimeSettings.FromRuntimeSettings(settings));
         }
     }
 
@@ -265,6 +276,7 @@ internal sealed class AppDatabase : IDisposable
         _db.GetCollection<ModelMapping>(ModelMappingCollectionName).EnsureIndex(m => m.ModelName);
         _db.GetCollection<InstructionSet>(InstructionSetCollectionName).EnsureIndex(i => i.Name, unique: true);
         _db.GetCollection<PersistedHeartbeat>(HeartbeatCollectionName).EnsureIndex(h => h.Model, unique: true);
+        _db.GetCollection<PersistedRuntimeSettings>(RuntimeSettingsCollectionName).EnsureIndex(s => s.Id, unique: true);
 
         Log.Debug("AppDatabase opened {Path}", _currentDbPath);
     }
@@ -308,4 +320,66 @@ internal sealed class PersistedHeartbeat
     public long Count { get; set; }
 
     public DateTime LastSentUtc { get; set; }
+}
+
+internal sealed class PersistedRuntimeSettings
+{
+    [BsonId]
+    public string Id { get; set; } = "current";
+
+    public bool AutoStartProxy { get; set; } = true;
+
+    public bool StartWithDashboardOpen { get; set; }
+
+    public bool AllowMultipleInstances { get; set; }
+
+    public bool ShowCloseToTrayNotification { get; set; } = true;
+
+    public bool CollectRequestDetails { get; set; } =
+#if DEBUG
+        true;
+#else
+        false;
+#endif
+
+    public bool CollectResponseDetails { get; set; } =
+#if DEBUG
+        true;
+#else
+        false;
+#endif
+
+    public bool EnableStreamingHeartbeats { get; set; } = true;
+
+    public int StreamingHeartbeatIntervalSeconds { get; set; } = 15;
+
+    public static PersistedRuntimeSettings FromRuntimeSettings(RuntimeSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        return new PersistedRuntimeSettings
+        {
+            Id = "current",
+            AutoStartProxy = settings.AutoStartProxy,
+            StartWithDashboardOpen = settings.StartWithDashboardOpen,
+            AllowMultipleInstances = settings.AllowMultipleInstances,
+            ShowCloseToTrayNotification = settings.ShowCloseToTrayNotification,
+            CollectRequestDetails = settings.CollectRequestDetails,
+            CollectResponseDetails = settings.CollectResponseDetails,
+            EnableStreamingHeartbeats = settings.EnableStreamingHeartbeats,
+            StreamingHeartbeatIntervalSeconds = settings.StreamingHeartbeatIntervalSeconds,
+        };
+    }
+
+    public RuntimeSettings ToRuntimeSettings() => new()
+    {
+        AutoStartProxy = AutoStartProxy,
+        StartWithDashboardOpen = StartWithDashboardOpen,
+        AllowMultipleInstances = AllowMultipleInstances,
+        ShowCloseToTrayNotification = ShowCloseToTrayNotification,
+        CollectRequestDetails = CollectRequestDetails,
+        CollectResponseDetails = CollectResponseDetails,
+        EnableStreamingHeartbeats = EnableStreamingHeartbeats,
+        StreamingHeartbeatIntervalSeconds = StreamingHeartbeatIntervalSeconds,
+    };
 }

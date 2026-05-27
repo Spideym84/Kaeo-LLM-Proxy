@@ -30,7 +30,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         // Initialize Serilog first so all subsequent code can log.
         AppLogger.Initialize(_settings.Logging);
         _database = new AppDatabase(_settings.Logging);
-        _database.SeedDatabaseBackedSettings(_settings);
+        _settings.ApplyRuntimeSettings(_database.LoadRuntimeSettings());
         _settings.ModelMappings = [.. _database.LoadModelMappings()];
         _settings.InstructionSets = [.. _database.LoadInstructionSets()];
 
@@ -225,6 +225,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
 
         _settings.ShowCloseToTrayNotification = false;
+        _database.SaveRuntimeSettings(_settings.CreateRuntimeSettings());
         _settings.Save();
     }
 

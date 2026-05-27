@@ -1,4 +1,5 @@
 using Kaeo.LlmProxy.Core.Models;
+using Kaeo.LlmProxy.Infrastructure;
 
 namespace Kaeo.LlmProxy;
 
@@ -25,6 +26,8 @@ internal static class Program
         };
 
         AppSettings settings = AppSettings.Load();
+        using AppDatabase database = new(settings.Logging);
+        settings.ApplyRuntimeSettings(database.LoadRuntimeSettings());
 
         if (!settings.AllowMultipleInstances)
         {

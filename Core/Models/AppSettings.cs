@@ -22,6 +22,36 @@ internal sealed class InstructionSet
     public string? Description { get; set; }
 }
 
+/// <summary>Mutable runtime settings stored in the application database.</summary>
+internal sealed class RuntimeSettings
+{
+    public bool AutoStartProxy { get; set; } = true;
+
+    public bool StartWithDashboardOpen { get; set; } = false;
+
+    public bool AllowMultipleInstances { get; set; } = false;
+
+    public bool ShowCloseToTrayNotification { get; set; } = true;
+
+    public bool CollectRequestDetails { get; set; } =
+#if DEBUG
+        true;
+#else
+        false;
+#endif
+
+    public bool CollectResponseDetails { get; set; } =
+#if DEBUG
+        true;
+#else
+        false;
+#endif
+
+    public bool EnableStreamingHeartbeats { get; set; } = true;
+
+    public int StreamingHeartbeatIntervalSeconds { get; set; } = 15;
+}
+
 /// <summary>Maps an externally exposed proxy model name to a specific upstream server and model name.</summary>
 internal sealed class ModelMapping
 {
@@ -130,9 +160,6 @@ internal sealed class LoggingSettings
     /// </summary>
     public string ApplicationDatabasePath { get; set; } = string.Empty;
 
-    /// <summary>Legacy request-log database path setting retained for upgrade compatibility.</summary>
-    public string? RequestLogDatabasePath { get; set; }
-
     /// <summary>
     /// How long to retain request log entries before they are automatically deleted.
     /// Set to 0 to keep entries forever. Default: 72 hours (3 days).
@@ -149,9 +176,6 @@ internal sealed class LoggingSettings
         if (!string.IsNullOrWhiteSpace(ApplicationDatabasePath))
             return ApplicationDatabasePath;
 
-        if (!string.IsNullOrWhiteSpace(RequestLogDatabasePath))
-            return RequestLogDatabasePath;
-
         return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "Database", "kaeo_llm_proxy.db");
     }
 }
@@ -163,11 +187,6 @@ internal sealed class AppSettings
         AppDomain.CurrentDomain.BaseDirectory,
         "Data",
         "settings.jsonc");
-
-    private static readonly string _databaseMigrationBackupPath = Path.Combine(
-        AppDomain.CurrentDomain.BaseDirectory,
-        "Data",
-        "settings.pre-database-migration.jsonc.bak");
 
     // Read: allow // and /* */ comments so the annotated template remains valid.
     private static readonly JsonSerializerOptions _readOptions = new()
@@ -206,9 +225,11 @@ internal sealed class AppSettings
     public int MaxLogEntries { get; set; } = 500;
 
     /// <summary>Automatically start the proxy when the application launches. Default: true.</summary>
+    [JsonIgnore]
     public bool AutoStartProxy { get; set; } = true;
 
     /// <summary>Open the dashboard window on startup instead of starting minimised to tray. Default: false.</summary>
+    [JsonIgnore]
     public bool StartWithDashboardOpen { get; set; } = false;
 
     /// <summary>
@@ -217,18 +238,21 @@ internal sealed class AppSettings
     /// will display a message and exit. Advanced users may set this to true when running
     /// multiple proxy configurations side-by-side. Default: false.
     /// </summary>
+    [JsonIgnore]
     public bool AllowMultipleInstances { get; set; } = false;
 
     /// <summary>
     /// When true, show a notification dialog the first time the main window is closed to the tray.
     /// Users can disable it from that dialog. Default: true.
     /// </summary>
+    [JsonIgnore]
     public bool ShowCloseToTrayNotification { get; set; } = true;
 
     /// <summary>
     /// When true, the raw request body is captured into each <see cref="RequestLog"/> entry.
     /// Useful for debugging but increases memory and storage usage. Default: false.
     /// </summary>
+    [JsonIgnore]
     public bool CollectRequestDetails { get; set; } =
 #if DEBUG
         true;
@@ -241,6 +265,7 @@ internal sealed class AppSettings
     /// For streaming responses this accumulates all chunks into a single string.
     /// Useful for debugging but increases memory and storage usage. Default: false.
     /// </summary>
+    [JsonIgnore]
     public bool CollectResponseDetails { get; set; } =
 #if DEBUG
         true;
@@ -252,11 +277,13 @@ internal sealed class AppSettings
     /// When true, streaming responses emit harmless heartbeat frames while waiting for long-thinking models.
     /// Helps clients keep connections open when no model tokens are available yet. Default: true.
     /// </summary>
+    [JsonIgnore]
     public bool EnableStreamingHeartbeats { get; set; } = true;
 
     /// <summary>
     /// Seconds between streaming heartbeat frames while waiting for upstream tokens. Min: 5, Max: 300. Default: 15.
     /// </summary>
+    [JsonIgnore]
     public int StreamingHeartbeatIntervalSeconds { get; set; } = 15;
 
     /// <summary>Logging configuration.</summary>
@@ -274,91 +301,11 @@ internal sealed class AppSettings
         try
         {
             string json = File.ReadAllText(_settingsPath);
-            AppSettings settings = JsonSerializer.Deserialize<AppSettings>(json, _readOptions) ?? new AppSettings();
-            if (LoadLegacyDatabaseBackedData(json, settings))
-                CreateDatabaseMigrationBackup(json);
-
-            if (settings.ModelMappings.Count == 0 && settings.InstructionSets.Count == 0)
-                LoadDatabaseBackedDataFromBackup(settings);
-
-            return settings;
+            return JsonSerializer.Deserialize<AppSettings>(json, _readOptions) ?? new AppSettings();
         }
         catch
         {
             return new AppSettings();
-        }
-    }
-
-    private static bool LoadLegacyDatabaseBackedData(string json, AppSettings settings)
-    {
-        try
-        {
-            using JsonDocument doc = JsonDocument.Parse(json, new JsonDocumentOptions
-            {
-                CommentHandling = JsonCommentHandling.Skip,
-                AllowTrailingCommas = true,
-            });
-
-            bool loaded = false;
-
-            if (doc.RootElement.TryGetProperty("ModelMappings", out JsonElement mappings)
-                && mappings.ValueKind == JsonValueKind.Array)
-            {
-                settings.ModelMappings = JsonSerializer.Deserialize<List<ModelMapping>>(mappings.GetRawText(), _readOptions) ?? [];
-                loaded = settings.ModelMappings.Count > 0;
-            }
-
-            if (doc.RootElement.TryGetProperty("InstructionSets", out JsonElement instructions)
-                && instructions.ValueKind == JsonValueKind.Array)
-            {
-                settings.InstructionSets = JsonSerializer.Deserialize<List<InstructionSet>>(instructions.GetRawText(), _readOptions) ?? [];
-                loaded = loaded || settings.InstructionSets.Count > 0;
-            }
-
-            return loaded;
-        }
-        catch (JsonException)
-        {
-            settings.ModelMappings = [];
-            settings.InstructionSets = [];
-            return false;
-        }
-    }
-
-    private static void LoadDatabaseBackedDataFromBackup(AppSettings settings)
-    {
-        if (!File.Exists(_databaseMigrationBackupPath))
-            return;
-
-        try
-        {
-            string json = File.ReadAllText(_databaseMigrationBackupPath);
-            LoadLegacyDatabaseBackedData(json, settings);
-        }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
-    }
-
-    private static void CreateDatabaseMigrationBackup(string json)
-    {
-        if (File.Exists(_databaseMigrationBackupPath))
-            return;
-
-        try
-        {
-            string dir = Path.GetDirectoryName(_databaseMigrationBackupPath)!;
-            Directory.CreateDirectory(dir);
-            File.WriteAllText(_databaseMigrationBackupPath, json);
-        }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
         }
     }
 
@@ -367,6 +314,32 @@ internal sealed class AppSettings
         string dir = Path.GetDirectoryName(_settingsPath)!;
         Directory.CreateDirectory(dir);
         File.WriteAllText(_settingsPath, JsonSerializer.Serialize(this, _writeOptions));
+    }
+
+    public RuntimeSettings CreateRuntimeSettings() => new()
+    {
+        AutoStartProxy = AutoStartProxy,
+        StartWithDashboardOpen = StartWithDashboardOpen,
+        AllowMultipleInstances = AllowMultipleInstances,
+        ShowCloseToTrayNotification = ShowCloseToTrayNotification,
+        CollectRequestDetails = CollectRequestDetails,
+        CollectResponseDetails = CollectResponseDetails,
+        EnableStreamingHeartbeats = EnableStreamingHeartbeats,
+        StreamingHeartbeatIntervalSeconds = StreamingHeartbeatIntervalSeconds,
+    };
+
+    public void ApplyRuntimeSettings(RuntimeSettings runtimeSettings)
+    {
+        ArgumentNullException.ThrowIfNull(runtimeSettings);
+
+        AutoStartProxy = runtimeSettings.AutoStartProxy;
+        StartWithDashboardOpen = runtimeSettings.StartWithDashboardOpen;
+        AllowMultipleInstances = runtimeSettings.AllowMultipleInstances;
+        ShowCloseToTrayNotification = runtimeSettings.ShowCloseToTrayNotification;
+        CollectRequestDetails = runtimeSettings.CollectRequestDetails;
+        CollectResponseDetails = runtimeSettings.CollectResponseDetails;
+        EnableStreamingHeartbeats = runtimeSettings.EnableStreamingHeartbeats;
+        StreamingHeartbeatIntervalSeconds = runtimeSettings.StreamingHeartbeatIntervalSeconds;
     }
 
     /// <summary>
@@ -420,8 +393,6 @@ internal sealed class AppSettings
         return null;
     }
 
-    private static string JsBool(bool value) => value ? "true" : "false";
-
     /// <summary>Writes the annotated default config template to disk on first run.</summary>
     private void CreateDefaultFile()
     {
@@ -448,36 +419,6 @@ internal sealed class AppSettings
         sb.AppendLine("  // Max recent request log entries kept in memory for the GUI.");
         sb.AppendLine("  // Min: 10  Max: 100000  Default: 500");
         sb.AppendLine($"  \"MaxLogEntries\": {MaxLogEntries},");
-
-        sb.AppendLine();
-        sb.AppendLine("  // Automatically start the proxy when the application launches.");
-        sb.AppendLine("  // Default: true");
-        sb.AppendLine($"  \"AutoStartProxy\": {JsBool(AutoStartProxy)},");
-        sb.AppendLine();
-        sb.AppendLine("  // Open the dashboard window immediately on startup instead of sitting silently in the tray.");
-        sb.AppendLine("  // Default: false");
-        sb.AppendLine($"  \"StartWithDashboardOpen\": {JsBool(StartWithDashboardOpen)},");
-        sb.AppendLine();
-        sb.AppendLine("  // Show a reminder when closing the dashboard window that the app continues running in the notification area.");
-        sb.AppendLine("  // Can be disabled from the reminder dialog. Default: true");
-        sb.AppendLine($"  \"ShowCloseToTrayNotification\": {JsBool(ShowCloseToTrayNotification)},");
-        sb.AppendLine();
-        sb.AppendLine("  // Capture the raw request body in each log entry for debugging.");
-        sb.AppendLine("  // Increases memory and DB storage usage. Default: false");
-        sb.AppendLine($"  \"CollectRequestDetails\": {JsBool(CollectRequestDetails)},");
-        sb.AppendLine();
-        sb.AppendLine("  // Capture the full LLM response text in each log entry for debugging.");
-        sb.AppendLine("  // For streaming responses, accumulates all chunks into a single string.");
-        sb.AppendLine("  // Increases memory and DB storage usage. Default: false");
-        sb.AppendLine($"  \"CollectResponseDetails\": {JsBool(CollectResponseDetails)},");
-        sb.AppendLine();
-        sb.AppendLine("  // Emit harmless heartbeat frames for streaming requests while long-thinking models are not producing tokens.");
-        sb.AppendLine("  // Helps clients avoid idle timeouts during extended reasoning. Default: true");
-        sb.AppendLine($"  \"EnableStreamingHeartbeats\": {JsBool(EnableStreamingHeartbeats)},");
-        sb.AppendLine();
-        sb.AppendLine("  // Seconds between heartbeat frames while waiting for upstream streaming data.");
-        sb.AppendLine("  // Min: 5  Max: 300  Default: 15");
-        sb.AppendLine($"  \"StreamingHeartbeatIntervalSeconds\": {StreamingHeartbeatIntervalSeconds},");
         sb.AppendLine();
         sb.AppendLine("  // \u2500\u2500\u2500 Logging \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
         sb.AppendLine("  \"Logging\": {");
@@ -501,10 +442,6 @@ internal sealed class AppSettings
         sb.AppendLine("    // Full path to the central LiteDB application database file.");
         sb.AppendLine("    // Empty uses Data/Database/kaeo_llm_proxy.db under the application directory.");
         sb.AppendLine($"    \"ApplicationDatabasePath\": \"{Logging.ApplicationDatabasePath.Replace("\\", "\\\\")}\",");
-        sb.AppendLine();
-        sb.AppendLine("    // How long to keep request log entries before automatic deletion.");
-        sb.AppendLine("    // Set to 0 to retain forever. Default: 72 (3 days).");
-        sb.AppendLine($"    \"LogRetentionHours\": {Logging.LogRetentionHours},");
         sb.AppendLine();
         sb.AppendLine("    // Root directory for text log files.");
         sb.AppendLine($"    \"LogDirectory\": \"{logDir}\"");
