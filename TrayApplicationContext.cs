@@ -17,7 +17,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly PerformanceService _perfService;
     private readonly OllamaProxyHandler _handler;
     private readonly ProxyServer _server;
-    private readonly RequestLogStore _logStore;
+    private readonly AppDatabase _database;
     private MainForm? _mainForm;
     private bool _disposed;
 
@@ -29,11 +29,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         // Initialize Serilog first so all subsequent code can log.
         AppLogger.Initialize(_settings.Logging);
+        _database = new AppDatabase(_settings.Logging);
+        _database.SeedDatabaseBackedSettings(_settings);
+        _settings.ModelMappings = [.. _database.LoadModelMappings()];
+        _settings.InstructionSets = [.. _database.LoadInstructionSets()];
+
         Log.Information("Kaeo LLM Proxy starting. ListenAddress={Address} ListenPort={Port} MappingsCount={Count}",
             _settings.ListenAddress, _settings.ListenPort, _settings.ModelMappings.Count);
 
-        _logStore = new RequestLogStore(_settings.Logging);
-        _stats = new StatisticsService(_settings.MaxLogEntries, _logStore, _settings.Logging.LogRetentionHours);
+        _stats = new StatisticsService(_settings.MaxLogEntries, _database, _settings.Logging.LogRetentionHours);
         _perfService = new PerformanceService();
         _handler = new OllamaProxyHandler(_settings, _stats);
         _server = new ProxyServer(_handler);
@@ -134,7 +138,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         if (_mainForm is null || _mainForm.IsDisposed)
         {
-            _mainForm = new MainForm(_settings, _stats, _server, _handler, _perfService);
+            _mainForm = new MainForm(_settings, _stats, _server, _handler, _perfService, _database);
             _mainForm.FormClosed += OnMainFormClosed;
             _mainForm.MinimizedToTray += OnMainFormMinimizedToTray;
         }
@@ -243,7 +247,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             _trayIcon.Dispose();
             _server.Dispose();
-            _logStore.Dispose();
+            _database.Dispose();
             _perfService.Dispose();
             AppLogger.Shutdown();
         }

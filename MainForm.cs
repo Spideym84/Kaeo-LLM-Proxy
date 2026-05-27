@@ -16,6 +16,7 @@ internal partial class MainForm : Form
     private readonly ProxyServer _server;
     private readonly OllamaProxyHandler _handler;
     private readonly PerformanceService _perfService;
+    private readonly AppDatabase _database;
 
     internal event EventHandler? MinimizedToTray;
 
@@ -23,13 +24,14 @@ internal partial class MainForm : Form
 
     private static readonly JsonSerializerOptions _indentedJsonOptions = new() { WriteIndented = true };
 
-    public MainForm(AppSettings settings, StatisticsService stats, ProxyServer server, OllamaProxyHandler handler, PerformanceService perfService)
+    public MainForm(AppSettings settings, StatisticsService stats, ProxyServer server, OllamaProxyHandler handler, PerformanceService perfService, AppDatabase database)
     {
         _settings = settings;
         _stats = stats;
         _server = server;
         _handler = handler;
         _perfService = perfService;
+        _database = database;
 
         InitializeComponent();
         Icon = Program.GetApplicationIcon();
@@ -633,7 +635,7 @@ internal partial class MainForm : Form
         _txtAppLogSize.Text = _settings.Logging.AppLogFileSizeLimitMb.ToString();
         _txtAppLogRetain.Text = _settings.Logging.AppLogRetainedFileCount.ToString();
         _txtReqLogSize.Text = _settings.Logging.RequestLogFileSizeLimitMb.ToString();
-        _txtRequestDbPath.Text = _settings.Logging.GetRequestLogDatabasePath();
+        _txtRequestDbPath.Text = _settings.Logging.GetApplicationDatabasePath();
         _txtLogRetention.Text = _settings.Logging.LogRetentionHours.ToString();
     }
 
@@ -662,7 +664,7 @@ internal partial class MainForm : Form
 
         if (string.IsNullOrWhiteSpace(_txtRequestDbPath.Text))
         {
-            MessageBox.Show("Request DB file path cannot be empty.", "Validation",
+            MessageBox.Show("Application database file path cannot be empty.", "Validation",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
@@ -671,7 +673,7 @@ internal partial class MainForm : Form
         string? requestDbDirectory = Path.GetDirectoryName(requestDbPath);
         if (string.IsNullOrWhiteSpace(requestDbDirectory))
         {
-            MessageBox.Show("Request DB file path must include a directory.", "Validation",
+            MessageBox.Show("Application database file path must include a directory.", "Validation",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
@@ -692,7 +694,7 @@ internal partial class MainForm : Form
 
         if (!int.TryParse(_txtReqLogSize.Text, out int reqLogSize) || reqLogSize < 1)
         {
-            MessageBox.Show("Request DB file size limit must be a positive number.", "Validation",
+            MessageBox.Show("Application database file size limit must be a positive number.", "Validation",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
@@ -716,7 +718,8 @@ internal partial class MainForm : Form
         _settings.Logging.AppLogFileSizeLimitMb = appLogSize;
         _settings.Logging.AppLogRetainedFileCount = appLogRetain;
         _settings.Logging.RequestLogFileSizeLimitMb = reqLogSize;
-        _settings.Logging.RequestLogDatabasePath = requestDbPath;
+        _settings.Logging.ApplicationDatabasePath = requestDbPath;
+        _settings.Logging.RequestLogDatabasePath = null;
         _settings.Logging.LogRetentionHours = logRetentionHours;
 
         _settings.ModelMappings.Clear();
@@ -775,6 +778,8 @@ internal partial class MainForm : Form
             }
         }
 
+        _database.SaveModelMappings(_settings.ModelMappings);
+        _database.SaveInstructionSets(_settings.InstructionSets);
         _settings.Save();
         _stats.UpdateMaxEntries(maxLogs);
         _stats.UpdateRetentionHours(logRetentionHours);
@@ -783,7 +788,7 @@ internal partial class MainForm : Form
         // Re-apply logging config immediately so the new level/size/dir is active.
         AppLogger.Initialize(_settings.Logging);
 
-        MessageBox.Show("Settings saved. Restart the app for request DB file path changes to take effect. Restart the proxy for port changes to take effect.",
+        MessageBox.Show("Settings saved. Restart the app for application database file path changes to take effect. Restart the proxy for port changes to take effect.",
             "Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
         RefreshStatus();
@@ -802,7 +807,7 @@ internal partial class MainForm : Form
                 ? Path.GetDirectoryName(_txtRequestDbPath.Text)
                 : _settings.Logging.LogDirectory,
             OverwritePrompt = false,
-            Title = "Choose Request Log Database File",
+            Title = "Choose Application Database File",
         };
 
         if (dialog.ShowDialog(this) == DialogResult.OK)
@@ -993,6 +998,7 @@ internal partial class MainForm : Form
         }
 
         _settings.InstructionSets.Add(newSet);
+        _database.SaveInstructionSets(_settings.InstructionSets);
         _settings.Save();
         RefreshInstructionsList();
         RefreshInstructionDropdowns();
@@ -1036,6 +1042,8 @@ internal partial class MainForm : Form
         }
 
         _settings.Save();
+        _database.SaveInstructionSets(_settings.InstructionSets);
+        _database.SaveModelMappings(_settings.ModelMappings);
         LoadSettingsToForm();
         RefreshInstructionsList();
         RefreshInstructionDropdowns();
@@ -1067,6 +1075,8 @@ internal partial class MainForm : Form
         }
 
         _settings.InstructionSets.Remove(toRemove);
+        _database.SaveInstructionSets(_settings.InstructionSets);
+        _database.SaveModelMappings(_settings.ModelMappings);
         _settings.Save();
         LoadSettingsToForm();
         RefreshInstructionsList();

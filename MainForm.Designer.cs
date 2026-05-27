@@ -824,7 +824,7 @@ partial class MainForm
         _lblReqLogSize.AutoSize = true;
         _lblReqLogSize.Margin = new Padding(4, 8, 8, 4);
         _lblReqLogSize.Name = "_lblReqLogSize";
-        _lblReqLogSize.Text = "Request DB File Limit (MB):";
+        _lblReqLogSize.Text = "Database File Limit (MB):";
 
         _txtReqLogSize.Dock = DockStyle.Fill;
         _txtReqLogSize.Margin = new Padding(4, 6, 4, 4);
@@ -834,7 +834,7 @@ partial class MainForm
         _lblRequestDbPath.AutoSize = true;
         _lblRequestDbPath.Margin = new Padding(4, 8, 8, 4);
         _lblRequestDbPath.Name = "_lblRequestDbPath";
-        _lblRequestDbPath.Text = "Request DB File:";
+        _lblRequestDbPath.Text = "Application Database:";
 
         _tlpRequestDbPath.ColumnCount = 2;
         _tlpRequestDbPath.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));

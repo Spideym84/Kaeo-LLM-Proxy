@@ -8,7 +8,7 @@ namespace Kaeo.LlmProxy.Core.Services;
 
 /// <summary>
 /// Thread-safe service that tracks request logs and aggregate statistics.
-/// Persists every entry to <see cref="RequestLogStore"/> (LiteDB) when one is supplied.
+/// Persists every entry to <see cref="AppDatabase"/> (LiteDB) when one is supplied.
 /// On construction, seeds the in-memory queue from the store so the GUI is populated after restart.
 /// Runs a background timer every 15 minutes to prune entries older than the configured retention window.
 /// All public members are safe to call from any thread.
@@ -18,7 +18,7 @@ internal sealed class StatisticsService : IDisposable
     private readonly ConcurrentQueue<RequestLog> _logs = new();
     private int _maxEntries;
     private int _retentionHours;
-    private readonly RequestLogStore? _store;
+    private readonly AppDatabase? _store;
 
     // Rolling 60-second window of request timestamps for requests-per-second calculation.
     private readonly ConcurrentQueue<long> _requestTimestamps = new();
@@ -36,7 +36,7 @@ internal sealed class StatisticsService : IDisposable
     public event EventHandler? StatsChanged;
     public event EventHandler? HeartbeatsChanged;
 
-    public StatisticsService(int maxEntries = 500, RequestLogStore? store = null, int retentionHours = 72)
+    public StatisticsService(int maxEntries = 500, AppDatabase? store = null, int retentionHours = 72)
     {
         _maxEntries = maxEntries;
         _retentionHours = retentionHours;
@@ -52,6 +52,13 @@ internal sealed class StatisticsService : IDisposable
                 if (entry.Status == RequestStatus.Error) Interlocked.Increment(ref _totalErrors);
                 Interlocked.Add(ref _totalPromptTokens, entry.PromptTokens);
                 Interlocked.Add(ref _totalCompletionTokens, entry.CompletionTokens);
+            }
+
+            foreach ((string model, long count, DateTime lastSentUtc) in store.LoadHeartbeatStats())
+            {
+                HeartbeatStat stat = _heartbeats.GetOrAdd(model, _ => new HeartbeatStat());
+                Interlocked.Exchange(ref stat.Count, count);
+                stat.LastSentUtcTicks = lastSentUtc.Ticks;
             }
         }
 
@@ -161,6 +168,18 @@ internal sealed class StatisticsService : IDisposable
         HeartbeatStat stat = _heartbeats.GetOrAdd(key, _ => new HeartbeatStat());
         Interlocked.Increment(ref stat.Count);
         stat.LastSentUtcTicks = DateTime.UtcNow.Ticks;
+        long count = Interlocked.Read(ref stat.Count);
+        DateTime lastSentUtc = new(Interlocked.Read(ref stat.LastSentUtcTicks), DateTimeKind.Utc);
+
+        if (_store is not null)
+        {
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                try { _store.UpsertHeartbeat(key, count, lastSentUtc); }
+                catch (Exception storeEx) { Log.Warning(storeEx, "Failed to persist heartbeat stat"); }
+            });
+        }
+
         HeartbeatsChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -177,6 +196,7 @@ internal sealed class StatisticsService : IDisposable
     public void ResetHeartbeats()
     {
         _heartbeats.Clear();
+        _store?.ClearHeartbeats();
         HeartbeatsChanged?.Invoke(this, EventArgs.Empty);
     }
 

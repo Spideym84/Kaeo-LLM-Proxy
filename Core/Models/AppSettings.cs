@@ -122,13 +122,16 @@ internal sealed class LoggingSettings
     /// <summary>Number of rolled app-log files to retain (oldest deleted first). Min: 1, Max: 999.</summary>
     public int AppLogRetainedFileCount { get; set; } = 7;
 
-    /// <summary>Maximum size in MB of a single LiteDB request-log file before archiving. Min: 1, Max: 5000.</summary>
+    /// <summary>Maximum size in MB of the LiteDB application database before archiving. Min: 1, Max: 5000.</summary>
     public int RequestLogFileSizeLimitMb { get; set; } = 50;
 
     /// <summary>
-    /// Full path of the active LiteDB request-log database file. Empty uses the default path under <see cref="LogDirectory"/>.
+    /// Full path of the active LiteDB application database file. Empty uses the default path under the application Data directory.
     /// </summary>
-    public string RequestLogDatabasePath { get; set; } = string.Empty;
+    public string ApplicationDatabasePath { get; set; } = string.Empty;
+
+    /// <summary>Legacy request-log database path setting retained for upgrade compatibility.</summary>
+    public string? RequestLogDatabasePath { get; set; }
 
     /// <summary>
     /// How long to retain request log entries before they are automatically deleted.
@@ -141,11 +144,15 @@ internal sealed class LoggingSettings
         AppDomain.CurrentDomain.BaseDirectory,
         "Data", "logs");
 
-    public string GetRequestLogDatabasePath()
+    public string GetApplicationDatabasePath()
     {
-        return string.IsNullOrWhiteSpace(RequestLogDatabasePath)
-            ? Path.Combine(LogDirectory, "requests", "requests_current.db")
-            : RequestLogDatabasePath;
+        if (!string.IsNullOrWhiteSpace(ApplicationDatabasePath))
+            return ApplicationDatabasePath;
+
+        if (!string.IsNullOrWhiteSpace(RequestLogDatabasePath))
+            return RequestLogDatabasePath;
+
+        return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "Database", "kaeo_llm_proxy.db");
     }
 }
 
@@ -182,10 +189,12 @@ internal sealed class AppSettings
     /// </summary>
     public string ListenAddress { get; set; } = "localhost";
 
-    /// <summary>Model name mappings: Each Ollama model name maps to a specific upstream server and llama.cpp model name.</summary>
+    /// <summary>Model name mappings loaded from the application database at startup.</summary>
+    [JsonIgnore]
     public List<ModelMapping> ModelMappings { get; set; } = [];
 
-    /// <summary>Named instruction sets that can be assigned to model mappings for request injection.</summary>
+    /// <summary>Named instruction sets loaded from the application database at startup.</summary>
+    [JsonIgnore]
     public List<InstructionSet> InstructionSets { get; set; } = [];
 
     /// <summary>Maximum number of log entries to keep in memory. Min: 10, Max: 100000.</summary>
@@ -260,11 +269,42 @@ internal sealed class AppSettings
         try
         {
             string json = File.ReadAllText(_settingsPath);
-            return JsonSerializer.Deserialize<AppSettings>(json, _readOptions) ?? new AppSettings();
+            AppSettings settings = JsonSerializer.Deserialize<AppSettings>(json, _readOptions) ?? new AppSettings();
+            LoadLegacyDatabaseBackedData(json, settings);
+            return settings;
         }
         catch
         {
             return new AppSettings();
+        }
+    }
+
+    private static void LoadLegacyDatabaseBackedData(string json, AppSettings settings)
+    {
+        try
+        {
+            using JsonDocument doc = JsonDocument.Parse(json, new JsonDocumentOptions
+            {
+                CommentHandling = JsonCommentHandling.Skip,
+                AllowTrailingCommas = true,
+            });
+
+            if (doc.RootElement.TryGetProperty("ModelMappings", out JsonElement mappings)
+                && mappings.ValueKind == JsonValueKind.Array)
+            {
+                settings.ModelMappings = JsonSerializer.Deserialize<List<ModelMapping>>(mappings.GetRawText(), _readOptions) ?? [];
+            }
+
+            if (doc.RootElement.TryGetProperty("InstructionSets", out JsonElement instructions)
+                && instructions.ValueKind == JsonValueKind.Array)
+            {
+                settings.InstructionSets = JsonSerializer.Deserialize<List<InstructionSet>>(instructions.GetRawText(), _readOptions) ?? [];
+            }
+        }
+        catch (JsonException)
+        {
+            settings.ModelMappings = [];
+            settings.InstructionSets = [];
         }
     }
 
@@ -385,29 +425,6 @@ internal sealed class AppSettings
         sb.AppendLine("  // Min: 5  Max: 300  Default: 15");
         sb.AppendLine($"  \"StreamingHeartbeatIntervalSeconds\": {StreamingHeartbeatIntervalSeconds},");
         sb.AppendLine();
-        sb.AppendLine("  // \u2500\u2500\u2500 Model Name Mappings \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
-        sb.AppendLine("  // Each entry maps an externally exposed proxy model name to a specific upstream server and upstream model.");
-        sb.AppendLine("  // Each mapping MUST specify its own UpstreamUrl.");
-        sb.AppendLine("  // EnableThinkingCompatibility strips assistant response-prefill turns for models that reject them when thinking is enabled.");
-        sb.AppendLine("  // UpstreamTimeoutSeconds: defaults to 300 if not specified or zero.");
-        sb.AppendLine("  // InstructionSetName: optional reference to an instruction set (defined below) to inject into requests.");
-        sb.AppendLine("  // RedactRequestBodies / RedactResponseBodies: replace captured request/response bodies with a redaction marker.");
-        sb.AppendLine("  // RedactSensitiveJsonFields: redacts API keys, authorization values, prompts, messages, and similar JSON fields.");
-        sb.AppendLine("  // Example (JSON field names remain OllamaName/LlamaCppName for backward compatibility):");
-        sb.AppendLine("  //   { \"OllamaName\": \"llama3\", \"LlamaCppName\": \"llama-3-8b\", \"EnableThinkingCompatibility\": true,");
-        sb.AppendLine("  //     \"UpstreamUrl\": \"http://192.168.1.10:8080\", \"UpstreamTimeoutSeconds\": 120,");
-        sb.AppendLine("  //     \"InstructionSetName\": \"CodeExpert\", \"RedactRequestBodies\": true,");
-        sb.AppendLine("  //     \"RedactResponseBodies\": true, \"RedactSensitiveJsonFields\": true }");
-        sb.AppendLine("  \"ModelMappings\": [],");
-        sb.AppendLine();
-        sb.AppendLine("  // ──── Instruction Sets ──────────────────────────────────────────────────────────────────────");
-        sb.AppendLine("  // Named instruction sets that can be assigned to model mappings.");
-        sb.AppendLine("  // Instructions are injected as system messages before the conversation.");
-        sb.AppendLine("  // Example:");
-        sb.AppendLine("  //   { \"Name\": \"CodeExpert\", \"Description\": \"Expert coding assistant\",");
-        sb.AppendLine("  //     \"Instructions\": \"You are an expert programmer. Always provide clean, well-documented code.\" }");
-        sb.AppendLine("  \"InstructionSets\": [],");
-        sb.AppendLine();
         sb.AppendLine("  // \u2500\u2500\u2500 Logging \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
         sb.AppendLine("  \"Logging\": {");
         sb.AppendLine();
@@ -423,19 +440,19 @@ internal sealed class AppSettings
         sb.AppendLine("    // Min: 1  Max: 999  Default: 7");
         sb.AppendLine($"    \"AppLogRetainedFileCount\": {Logging.AppLogRetainedFileCount},");
         sb.AppendLine();
-        sb.AppendLine("    // Archive the LiteDB request-log database when it reaches this size (MB).");
+        sb.AppendLine("    // Archive the LiteDB application database when it reaches this size (MB).");
         sb.AppendLine("    // Min: 1  Max: 5000  Default: 50");
         sb.AppendLine($"    \"RequestLogFileSizeLimitMb\": {Logging.RequestLogFileSizeLimitMb},");
         sb.AppendLine();
-        sb.AppendLine("    // Full path to the active LiteDB request-log database file.");
-        sb.AppendLine("    // Empty uses Data/logs/requests/requests_current.db under the application directory.");
-        sb.AppendLine($"    \"RequestLogDatabasePath\": \"{Logging.RequestLogDatabasePath.Replace("\\", "\\\\")}\",");
+        sb.AppendLine("    // Full path to the central LiteDB application database file.");
+        sb.AppendLine("    // Empty uses Data/Database/kaeo_llm_proxy.db under the application directory.");
+        sb.AppendLine($"    \"ApplicationDatabasePath\": \"{Logging.ApplicationDatabasePath.Replace("\\", "\\\\")}\",");
         sb.AppendLine();
         sb.AppendLine("    // How long to keep request log entries before automatic deletion.");
         sb.AppendLine("    // Set to 0 to retain forever. Default: 72 (3 days).");
         sb.AppendLine($"    \"LogRetentionHours\": {Logging.LogRetentionHours},");
         sb.AppendLine();
-        sb.AppendLine("    // Root directory for logs. App logs go in /app/, request DB in /requests/.");
+        sb.AppendLine("    // Root directory for text log files.");
         sb.AppendLine($"    \"LogDirectory\": \"{logDir}\"");
         sb.AppendLine("  }");
         sb.AppendLine("}");

@@ -5,14 +5,16 @@ using Serilog;
 namespace Kaeo.LlmProxy.Infrastructure;
 
 /// <summary>
-/// Persists <see cref="RequestLog"/> entries to LiteDB — a fast, serverless, embedded
-/// binary document database. Automatically archives the current file and opens a fresh
-/// one when the file size exceeds the configured limit.
+/// Central LiteDB application database. Stores application data in collections, including
+/// request logs, exceptions, model mappings, instruction sets, and heartbeat counters.
 /// </summary>
-internal sealed class RequestLogStore : IDisposable
+internal sealed class AppDatabase : IDisposable
 {
-    private const string CollectionName = "requests";
+    private const string RequestCollectionName = "requests";
     private const string ExceptionCollectionName = "exceptions";
+    private const string ModelMappingCollectionName = "model_mappings";
+    private const string InstructionSetCollectionName = "instruction_sets";
+    private const string HeartbeatCollectionName = "heartbeats";
 
     private readonly string _logDir;
     private readonly string _configuredDbPath;
@@ -22,9 +24,9 @@ internal sealed class RequestLogStore : IDisposable
     private LiteDatabase? _db;
     private string _currentDbPath = string.Empty;
 
-    public RequestLogStore(LoggingSettings settings)
+    public AppDatabase(LoggingSettings settings)
     {
-        _configuredDbPath = settings.GetRequestLogDatabasePath();
+        _configuredDbPath = settings.GetApplicationDatabasePath();
         _logDir = Path.GetDirectoryName(_configuredDbPath)
             ?? Path.Combine(settings.LogDirectory, "requests");
         _fileSizeLimitBytes = (long)settings.RequestLogFileSizeLimitMb * 1024 * 1024;
@@ -53,8 +55,94 @@ internal sealed class RequestLogStore : IDisposable
                 entry.ExceptionId = detail.Id;
             }
 
-            ILiteCollection<RequestLog> col = _db!.GetCollection<RequestLog>(CollectionName);
+            ILiteCollection<RequestLog> col = _db!.GetCollection<RequestLog>(RequestCollectionName);
             col.Insert(entry);
+        }
+    }
+
+    public IReadOnlyList<ModelMapping> LoadModelMappings()
+    {
+        lock (_lock)
+        {
+            return [.. _db!.GetCollection<ModelMapping>(ModelMappingCollectionName).FindAll()];
+        }
+    }
+
+    public void SaveModelMappings(IEnumerable<ModelMapping> mappings)
+    {
+        lock (_lock)
+        {
+            ILiteCollection<ModelMapping> col = _db!.GetCollection<ModelMapping>(ModelMappingCollectionName);
+            col.DeleteAll();
+            ModelMapping[] items = [.. mappings];
+            if (items.Length > 0)
+                col.InsertBulk(items);
+        }
+    }
+
+    public IReadOnlyList<InstructionSet> LoadInstructionSets()
+    {
+        lock (_lock)
+        {
+            return [.. _db!.GetCollection<InstructionSet>(InstructionSetCollectionName).FindAll().OrderBy(i => i.Name)];
+        }
+    }
+
+    public void SaveInstructionSets(IEnumerable<InstructionSet> instructionSets)
+    {
+        lock (_lock)
+        {
+            ILiteCollection<InstructionSet> col = _db!.GetCollection<InstructionSet>(InstructionSetCollectionName);
+            col.DeleteAll();
+            InstructionSet[] items = [.. instructionSets];
+            if (items.Length > 0)
+                col.InsertBulk(items);
+        }
+    }
+
+    public IReadOnlyList<(string Model, long Count, DateTime LastSentUtc)> LoadHeartbeatStats()
+    {
+        lock (_lock)
+        {
+            return [.. _db!.GetCollection<PersistedHeartbeat>(HeartbeatCollectionName)
+                .FindAll()
+                .Select(h => (h.Model, h.Count, h.LastSentUtc))];
+        }
+    }
+
+    public void UpsertHeartbeat(string model, long count, DateTime lastSentUtc)
+    {
+        lock (_lock)
+        {
+            ILiteCollection<PersistedHeartbeat> col = _db!.GetCollection<PersistedHeartbeat>(HeartbeatCollectionName);
+            col.Upsert(new PersistedHeartbeat
+            {
+                Model = model,
+                Count = count,
+                LastSentUtc = lastSentUtc,
+            });
+        }
+    }
+
+    public void ClearHeartbeats()
+    {
+        lock (_lock)
+        {
+            _db!.GetCollection<PersistedHeartbeat>(HeartbeatCollectionName).DeleteAll();
+        }
+    }
+
+    public void SeedDatabaseBackedSettings(AppSettings settings)
+    {
+        lock (_lock)
+        {
+            ILiteCollection<ModelMapping> mappings = _db!.GetCollection<ModelMapping>(ModelMappingCollectionName);
+            if (mappings.Count() == 0 && settings.ModelMappings.Count > 0)
+                mappings.InsertBulk(settings.ModelMappings);
+
+            ILiteCollection<InstructionSet> instructions = _db!.GetCollection<InstructionSet>(InstructionSetCollectionName);
+            if (instructions.Count() == 0 && settings.InstructionSets.Count > 0)
+                instructions.InsertBulk(settings.InstructionSets);
         }
     }
 
@@ -77,7 +165,7 @@ internal sealed class RequestLogStore : IDisposable
     {
         lock (_lock)
         {
-            ILiteCollection<RequestLog> col = _db!.GetCollection<RequestLog>(CollectionName);
+            ILiteCollection<RequestLog> col = _db!.GetCollection<RequestLog>(RequestCollectionName);
             return [.. col.FindAll().OrderByDescending(r => r.Timestamp).Take(count)];
         }
     }
@@ -91,7 +179,7 @@ internal sealed class RequestLogStore : IDisposable
     {
         lock (_lock)
         {
-            ILiteCollection<RequestLog> col = _db!.GetCollection<RequestLog>(CollectionName);
+            ILiteCollection<RequestLog> col = _db!.GetCollection<RequestLog>(RequestCollectionName);
             return [.. col.FindAll().OrderByDescending(r => r.Timestamp).Take(count).Reverse()];
         }
     }
@@ -105,7 +193,7 @@ internal sealed class RequestLogStore : IDisposable
     {
         lock (_lock)
         {
-            ILiteCollection<RequestLog> col = _db!.GetCollection<RequestLog>(CollectionName);
+            ILiteCollection<RequestLog> col = _db!.GetCollection<RequestLog>(RequestCollectionName);
 
             // Collect exception ids that are about to be removed so we can clean those up too.
             List<int> exceptionIds = [.. col
@@ -123,7 +211,7 @@ internal sealed class RequestLogStore : IDisposable
             }
 
             if (deleted > 0)
-                Log.Debug("RequestLogStore pruned {Count} entries older than {Cutoff:u}", deleted, cutoff);
+                Log.Debug("AppDatabase pruned {Count} request entries older than {Cutoff:u}", deleted, cutoff);
 
             return deleted;
         }
@@ -134,7 +222,7 @@ internal sealed class RequestLogStore : IDisposable
     {
         lock (_lock)
         {
-            ILiteCollection<RequestLog> col = _db!.GetCollection<RequestLog>(CollectionName);
+            ILiteCollection<RequestLog> col = _db!.GetCollection<RequestLog>(RequestCollectionName);
             IEnumerable<RequestLog> all = col.FindAll();
 
             long total = 0, errors = 0, prompt = 0, completion = 0;
@@ -165,7 +253,7 @@ internal sealed class RequestLogStore : IDisposable
         _db = new LiteDatabase(connStr);
 
         // Ensure an index on Timestamp for fast ordered queries.
-        ILiteCollection<RequestLog> col = _db.GetCollection<RequestLog>(CollectionName);
+        ILiteCollection<RequestLog> col = _db.GetCollection<RequestLog>(RequestCollectionName);
         col.EnsureIndex(r => r.Timestamp);
 
         // Index exceptions by their auto-id (default) — also index timestamp for browsing.
@@ -173,7 +261,12 @@ internal sealed class RequestLogStore : IDisposable
             _db.GetCollection<ExceptionDetail>(ExceptionCollectionName);
         exCol.EnsureIndex(e => e.Timestamp);
 
-        Log.Debug("RequestLogStore opened {Path}", _currentDbPath);
+        _db.GetCollection<ModelMapping>(ModelMappingCollectionName).EnsureIndex(m => m.ProxyName, unique: true);
+        _db.GetCollection<ModelMapping>(ModelMappingCollectionName).EnsureIndex(m => m.ModelName);
+        _db.GetCollection<InstructionSet>(InstructionSetCollectionName).EnsureIndex(i => i.Name, unique: true);
+        _db.GetCollection<PersistedHeartbeat>(HeartbeatCollectionName).EnsureIndex(h => h.Model, unique: true);
+
+        Log.Debug("AppDatabase opened {Path}", _currentDbPath);
     }
 
     private void CycleIfNeeded()
@@ -185,7 +278,7 @@ internal sealed class RequestLogStore : IDisposable
         if (size < _fileSizeLimitBytes)
             return;
 
-        Log.Information("RequestLogStore cycling — file size {SizeMb:F1} MB exceeds limit", size / 1024.0 / 1024.0);
+        Log.Information("AppDatabase cycling — file size {SizeMb:F1} MB exceeds limit", size / 1024.0 / 1024.0);
 
         _db?.Dispose();
         _db = null;
@@ -205,4 +298,14 @@ internal sealed class RequestLogStore : IDisposable
             _db = null;
         }
     }
+}
+
+internal sealed class PersistedHeartbeat
+{
+    [BsonId]
+    public string Model { get; set; } = string.Empty;
+
+    public long Count { get; set; }
+
+    public DateTime LastSentUtc { get; set; }
 }

@@ -23,15 +23,6 @@
   // Default: false
   "StartWithDashboardOpen": false,
 
-  // ─── Model Mappings ───────────────────────────────────────────────────────
-  // Each entry maps an Ollama model name to a specific upstream server and llama.cpp model.
-  // Each mapping MUST specify its own UpstreamUrl.
-  // UpstreamTimeoutSeconds: defaults to 300 if not specified or zero.
-  // Example:
-  //   { "OllamaName": "llama3", "LlamaCppName": "llama-3-8b",
-  //     "UpstreamUrl": "http://192.168.1.10:8080", "UpstreamTimeoutSeconds": 120 }
-  "ModelMappings": [],
-
   // ─── Logging ──────────────────────────────────────────────────────────────
   "Logging": {
 
@@ -47,11 +38,15 @@
 	// Min: 1  Max: 999  Default: 7
 	"AppLogRetainedFileCount": 7,
 
-	// Archive the LiteDB request-log database when it reaches this size (MB).
+  // Archive the LiteDB application database when it reaches this size (MB).
 	// Min: 1  Max: 5000  Default: 50
 	"RequestLogFileSizeLimitMb": 50,
 
-	// Root directory for logs. App logs go in /app/, request DB in /requests/.
+  // Full path to the central LiteDB application database file.
+  // Empty uses Data\Database\kaeo_llm_proxy.db under the application directory.
+  "ApplicationDatabasePath": "",
+
+  // Root directory for text log files.
 	// Relative paths are resolved from the executable directory.
 	// Default: "Data\\logs" (portable mode)
 	"LogDirectory": "Data\\logs"
