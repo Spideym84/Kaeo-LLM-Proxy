@@ -164,6 +164,11 @@ internal sealed class AppSettings
         "Data",
         "settings.jsonc");
 
+    private static readonly string _databaseMigrationBackupPath = Path.Combine(
+        AppDomain.CurrentDomain.BaseDirectory,
+        "Data",
+        "settings.pre-database-migration.jsonc.bak");
+
     // Read: allow // and /* */ comments so the annotated template remains valid.
     private static readonly JsonSerializerOptions _readOptions = new()
     {
@@ -270,7 +275,12 @@ internal sealed class AppSettings
         {
             string json = File.ReadAllText(_settingsPath);
             AppSettings settings = JsonSerializer.Deserialize<AppSettings>(json, _readOptions) ?? new AppSettings();
-            LoadLegacyDatabaseBackedData(json, settings);
+            if (LoadLegacyDatabaseBackedData(json, settings))
+                CreateDatabaseMigrationBackup(json);
+
+            if (settings.ModelMappings.Count == 0 && settings.InstructionSets.Count == 0)
+                LoadDatabaseBackedDataFromBackup(settings);
+
             return settings;
         }
         catch
@@ -279,7 +289,7 @@ internal sealed class AppSettings
         }
     }
 
-    private static void LoadLegacyDatabaseBackedData(string json, AppSettings settings)
+    private static bool LoadLegacyDatabaseBackedData(string json, AppSettings settings)
     {
         try
         {
@@ -289,22 +299,66 @@ internal sealed class AppSettings
                 AllowTrailingCommas = true,
             });
 
+            bool loaded = false;
+
             if (doc.RootElement.TryGetProperty("ModelMappings", out JsonElement mappings)
                 && mappings.ValueKind == JsonValueKind.Array)
             {
                 settings.ModelMappings = JsonSerializer.Deserialize<List<ModelMapping>>(mappings.GetRawText(), _readOptions) ?? [];
+                loaded = settings.ModelMappings.Count > 0;
             }
 
             if (doc.RootElement.TryGetProperty("InstructionSets", out JsonElement instructions)
                 && instructions.ValueKind == JsonValueKind.Array)
             {
                 settings.InstructionSets = JsonSerializer.Deserialize<List<InstructionSet>>(instructions.GetRawText(), _readOptions) ?? [];
+                loaded = loaded || settings.InstructionSets.Count > 0;
             }
+
+            return loaded;
         }
         catch (JsonException)
         {
             settings.ModelMappings = [];
             settings.InstructionSets = [];
+            return false;
+        }
+    }
+
+    private static void LoadDatabaseBackedDataFromBackup(AppSettings settings)
+    {
+        if (!File.Exists(_databaseMigrationBackupPath))
+            return;
+
+        try
+        {
+            string json = File.ReadAllText(_databaseMigrationBackupPath);
+            LoadLegacyDatabaseBackedData(json, settings);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private static void CreateDatabaseMigrationBackup(string json)
+    {
+        if (File.Exists(_databaseMigrationBackupPath))
+            return;
+
+        try
+        {
+            string dir = Path.GetDirectoryName(_databaseMigrationBackupPath)!;
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(_databaseMigrationBackupPath, json);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
         }
     }
 

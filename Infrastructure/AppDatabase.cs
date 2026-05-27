@@ -137,12 +137,12 @@ internal sealed class AppDatabase : IDisposable
         lock (_lock)
         {
             ILiteCollection<ModelMapping> mappings = _db!.GetCollection<ModelMapping>(ModelMappingCollectionName);
-            if (mappings.Count() == 0 && settings.ModelMappings.Count > 0)
-                mappings.InsertBulk(settings.ModelMappings);
+            foreach (ModelMapping mapping in settings.ModelMappings)
+                mappings.Upsert(mapping.ProxyName, mapping);
 
             ILiteCollection<InstructionSet> instructions = _db!.GetCollection<InstructionSet>(InstructionSetCollectionName);
-            if (instructions.Count() == 0 && settings.InstructionSets.Count > 0)
-                instructions.InsertBulk(settings.InstructionSets);
+            foreach (InstructionSet instructionSet in settings.InstructionSets)
+                instructions.Upsert(instructionSet.Name, instructionSet);
         }
     }
 

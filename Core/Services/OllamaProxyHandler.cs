@@ -47,19 +47,16 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
     /// </summary>
     private (string BaseUrl, int TimeoutSeconds) ResolveUpstream(string ollamaModel)
     {
-        // Try exact match first
-        foreach (ModelMapping m in _settings.ModelMappings)
+        ModelMapping? mapping = _settings.FindModelMapping(ollamaModel);
+        if (mapping is not null)
         {
-            if (string.Equals(m.ProxyName, ollamaModel, StringComparison.OrdinalIgnoreCase))
-            {
-                if (string.IsNullOrWhiteSpace(m.UpstreamUrl))
-                    throw new InvalidOperationException(
-                        $"Model mapping '{m.ProxyName}' has no upstream URL configured. " +
-                        "Each mapping must specify its own UpstreamUrl.");
+            if (string.IsNullOrWhiteSpace(mapping.UpstreamUrl))
+                throw new InvalidOperationException(
+                    $"Model mapping '{mapping.ProxyName}' has no upstream URL configured. " +
+                    "Each mapping must specify its own UpstreamUrl.");
 
-                int timeout = m.UpstreamTimeoutSeconds > 0 ? m.UpstreamTimeoutSeconds : 300;
-                return (m.UpstreamUrl.TrimEnd('/'), timeout);
-            }
+            int timeout = mapping.UpstreamTimeoutSeconds > 0 ? mapping.UpstreamTimeoutSeconds : 300;
+            return (mapping.UpstreamUrl.TrimEnd('/'), timeout);
         }
 
         // Fallback: if model name is empty/null and we have at least one mapping,
