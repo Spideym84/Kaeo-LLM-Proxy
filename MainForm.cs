@@ -538,6 +538,7 @@ internal partial class MainForm : Form
         _settings.StreamingHeartbeatIntervalSeconds = heartbeatIntervalSeconds;
         _settings.Save();
         _handler.UpdateSettings(_settings);
+        RefreshHeartbeats();
 
         MessageBox.Show("Heartbeat settings saved.", "Saved",
             MessageBoxButtons.OK, MessageBoxIcon.Information);

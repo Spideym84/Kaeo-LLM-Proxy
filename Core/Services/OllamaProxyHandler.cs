@@ -1,8 +1,10 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
 using System.Text;
 using System.Text.Json;
 using Kaeo.LlmProxy.Core.Models;
+using Serilog;
 
 namespace Kaeo.LlmProxy.Core.Services;
 
@@ -27,8 +29,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
     private HttpClient _httpClient = BuildHttpClient(settings);
 
     private readonly StatisticsService _stats = stats;
-
-    public void Dispose() => _httpClient.Dispose();
+    private readonly ConcurrentDictionary<string, PeriodicHeartbeatState> _periodicHeartbeats = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Called from the Settings UI after the user saves new settings.</summary>
     public void UpdateSettings(AppSettings settings)
@@ -37,6 +38,93 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         HttpClient old = _httpClient;
         _httpClient = BuildHttpClient(settings);
         old.Dispose();
+        SynchronizeHeartbeatMonitors();
+    }
+
+    public void StartHeartbeatMonitors() => SynchronizeHeartbeatMonitors();
+
+    public void StopHeartbeatMonitors()
+    {
+        foreach (PeriodicHeartbeatState state in _periodicHeartbeats.Values)
+            state.Dispose();
+
+        _periodicHeartbeats.Clear();
+    }
+
+    private void SynchronizeHeartbeatMonitors()
+    {
+        HashSet<string> activeKeys = new(StringComparer.OrdinalIgnoreCase);
+
+        foreach (ModelMapping mapping in _settings.ModelMappings)
+        {
+            string modelName = GetHeartbeatModelName(mapping);
+            if (string.IsNullOrWhiteSpace(modelName))
+                continue;
+
+            _stats.RegisterHeartbeatModel(modelName);
+
+            string key = modelName.Trim();
+            activeKeys.Add(key);
+
+            if (!_settings.EnableStreamingHeartbeats || !mapping.EnableHeartbeats)
+            {
+                if (_periodicHeartbeats.TryRemove(key, out PeriodicHeartbeatState? removed))
+                    removed.Dispose();
+                continue;
+            }
+
+            if (_periodicHeartbeats.TryGetValue(key, out PeriodicHeartbeatState? existing))
+            {
+                existing.Update(mapping, _settings.StreamingHeartbeatIntervalSeconds);
+                continue;
+            }
+
+            PeriodicHeartbeatState created = new(mapping, _settings.StreamingHeartbeatIntervalSeconds, SendPeriodicHeartbeatAsync);
+            if (!_periodicHeartbeats.TryAdd(key, created))
+                created.Dispose();
+        }
+
+        foreach (string key in _periodicHeartbeats.Keys)
+        {
+            if (activeKeys.Contains(key))
+                continue;
+
+            if (_periodicHeartbeats.TryRemove(key, out PeriodicHeartbeatState? removed))
+                removed.Dispose();
+        }
+    }
+
+    private async Task SendPeriodicHeartbeatAsync(ModelMapping mapping, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(mapping.UpstreamUrl))
+            return;
+
+        string modelName = GetHeartbeatModelName(mapping);
+        if (string.IsNullOrWhiteSpace(modelName))
+            return;
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/v1/models/{Uri.EscapeDataString(mapping.ModelName)}");
+        int timeout = mapping.UpstreamTimeoutSeconds > 0 ? mapping.UpstreamTimeoutSeconds : 300;
+        using HttpResponseMessage response = await SendUpstreamAsync(
+            request,
+            mapping.UpstreamUrl.TrimEnd('/'),
+            timeout,
+            HttpCompletionOption.ResponseHeadersRead,
+            ct);
+
+        if (response.IsSuccessStatusCode)
+            _stats.IncrementHeartbeat(modelName);
+        else
+            Log.Warning("Heartbeat probe for model {Model} returned HTTP {StatusCode}", modelName, (int)response.StatusCode);
+    }
+
+    private static string GetHeartbeatModelName(ModelMapping mapping)
+        => string.IsNullOrWhiteSpace(mapping.ProxyName) ? mapping.ModelName : mapping.ProxyName;
+
+    public void Dispose()
+    {
+        StopHeartbeatMonitors();
+        _httpClient.Dispose();
     }
 
     /// <summary>
@@ -1769,5 +1857,100 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             await inner.WriteAsync(buffer, ct);
             await _capture.WriteAsync(buffer, ct);
         }
+    }
+
+    private sealed class PeriodicHeartbeatState : IDisposable
+    {
+        private readonly Func<ModelMapping, CancellationToken, Task> _sendHeartbeatAsync;
+        private readonly CancellationTokenSource _cts = new();
+        private readonly SemaphoreSlim _sendLock = new(1, 1);
+        private System.Threading.Timer _timer;
+        private ModelMapping _mapping;
+
+        public PeriodicHeartbeatState(
+            ModelMapping mapping,
+            int intervalSeconds,
+            Func<ModelMapping, CancellationToken, Task> sendHeartbeatAsync)
+        {
+            _mapping = CloneMapping(mapping);
+            _sendHeartbeatAsync = sendHeartbeatAsync;
+            TimeSpan interval = GetInterval(intervalSeconds);
+            _timer = new System.Threading.Timer(OnTimer, null, TimeSpan.Zero, interval);
+        }
+
+        public void Update(ModelMapping mapping, int intervalSeconds)
+        {
+            _mapping = CloneMapping(mapping);
+            TimeSpan interval = GetInterval(intervalSeconds);
+            _timer.Change(TimeSpan.Zero, interval);
+        }
+
+        private void OnTimer(object? state)
+        {
+            if (_cts.IsCancellationRequested)
+                return;
+
+            _ = SendAsync();
+        }
+
+        private async Task SendAsync()
+        {
+            try
+            {
+                if (!await _sendLock.WaitAsync(0, _cts.Token).ConfigureAwait(false))
+                    return;
+            }
+            catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+            {
+                return;
+            }
+
+            try
+            {
+                await _sendHeartbeatAsync(_mapping, _cts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+            {
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Periodic heartbeat failed for model {Model}", _mapping.ProxyName);
+            }
+            finally
+            {
+                _sendLock.Release();
+            }
+        }
+
+        public void Dispose()
+        {
+            _cts.Cancel();
+            _timer.Dispose();
+            _sendLock.Dispose();
+            _cts.Dispose();
+        }
+
+        private static TimeSpan GetInterval(int intervalSeconds)
+            => TimeSpan.FromSeconds(Math.Clamp(intervalSeconds, 5, 300));
+
+        private static ModelMapping CloneMapping(ModelMapping mapping) => new()
+        {
+            ProxyName = mapping.ProxyName,
+            ModelName = mapping.ModelName,
+            EnableThinkingCompatibility = mapping.EnableThinkingCompatibility,
+            EnableHeartbeats = mapping.EnableHeartbeats,
+            UpstreamType = mapping.UpstreamType,
+            UpstreamUrl = mapping.UpstreamUrl,
+            UpstreamTimeoutSeconds = mapping.UpstreamTimeoutSeconds,
+            RepeatPenalty = mapping.RepeatPenalty,
+            Temperature = mapping.Temperature,
+            EnableAutoSummarization = mapping.EnableAutoSummarization,
+            PreserveRecentMessageCount = mapping.PreserveRecentMessageCount,
+            MaxSummarizationRetries = mapping.MaxSummarizationRetries,
+            InstructionSetName = mapping.InstructionSetName,
+            RedactRequestBodies = mapping.RedactRequestBodies,
+            RedactResponseBodies = mapping.RedactResponseBodies,
+            RedactSensitiveJsonFields = mapping.RedactSensitiveJsonFields,
+        };
     }
 }

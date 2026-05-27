@@ -55,11 +55,7 @@ internal sealed class StatisticsService : IDisposable
             }
 
             foreach ((string model, long count, DateTime lastSentUtc) in store.LoadHeartbeatStats())
-            {
-                HeartbeatStat stat = _heartbeats.GetOrAdd(model, _ => new HeartbeatStat());
-                Interlocked.Exchange(ref stat.Count, count);
-                stat.LastSentUtcTicks = lastSentUtc.Ticks;
-            }
+                SetHeartbeatStat(model, count, lastSentUtc);
         }
 
         // Background cleanup: prune stale entries every 15 minutes.
@@ -180,6 +176,24 @@ internal sealed class StatisticsService : IDisposable
             });
         }
 
+        HeartbeatsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void RegisterHeartbeatModel(string? modelName)
+    {
+        string key = string.IsNullOrWhiteSpace(modelName) ? "(unknown)" : modelName.Trim();
+        _heartbeats.GetOrAdd(key, _ => new HeartbeatStat());
+        HeartbeatsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void SetHeartbeatStat(string? modelName, long count, DateTime lastSentUtc)
+    {
+        string key = string.IsNullOrWhiteSpace(modelName) ? "(unknown)" : modelName.Trim();
+        HeartbeatStat stat = _heartbeats.GetOrAdd(key, _ => new HeartbeatStat());
+        Interlocked.Exchange(ref stat.Count, count);
+        stat.LastSentUtcTicks = lastSentUtc.Kind == DateTimeKind.Utc
+            ? lastSentUtc.Ticks
+            : lastSentUtc.ToUniversalTime().Ticks;
         HeartbeatsChanged?.Invoke(this, EventArgs.Empty);
     }
 
