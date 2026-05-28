@@ -873,30 +873,25 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         && (message.ToolCalls is null || message.ToolCalls.Count == 0)
         && string.IsNullOrWhiteSpace(message.ToolCallId);
 
-    // ── /api/tags → GET /v1/models ──────────────────────────────────────────
+    // ── /api/tags → configured proxy model names ───────────────────────────
 
     private async Task HandleTagsAsync(HttpListenerResponse resp, RequestLog log, CancellationToken ct)
     {
-        var (baseUrl, timeout, apiKey) = ResolveUpstream(string.Empty);
-        using var req = new HttpRequestMessage(HttpMethod.Get, "/v1/models");
-        ApplyApiKey(req, apiKey);
-        HttpResponseMessage upstreamResp = await SendUpstreamAsync(req, baseUrl, timeout, HttpCompletionOption.ResponseContentRead, ct);
-        log.StatusCode = (int)upstreamResp.StatusCode;
-
-        string body = await upstreamResp.Content.ReadAsStringAsync(ct);
-        LlamaCppModelsResponse? models = JsonSerializer.Deserialize<LlamaCppModelsResponse>(body, _jsonOptions);
-
         var tags = new OllamaTagsResponse
         {
-            Models = [.. (models?.Data ?? []).Select(m => new OllamaModelEntry
+            Models = [.. _settings.ModelMappings
+                .Where(m => !string.IsNullOrWhiteSpace(m.ProxyName))
+                .OrderBy(m => m.ProxyName, StringComparer.OrdinalIgnoreCase)
+                .Select(m => new OllamaModelEntry
             {
-                Name = m.Id,
-                Model = m.Id,
-                ModifiedAt = DateTimeOffset.FromUnixTimeSeconds(m.Created).UtcDateTime.ToString("o"),
+                Name = m.ProxyName,
+                Model = m.ProxyName,
+                ModifiedAt = DateTime.UtcNow.ToString("o"),
             })],
         };
 
-        log.Status = upstreamResp.IsSuccessStatusCode ? RequestStatus.Success : RequestStatus.Error;
+        log.StatusCode = 200;
+        log.Status = RequestStatus.Success;
         await WriteJsonAsync(resp, tags, ct);
     }
 
