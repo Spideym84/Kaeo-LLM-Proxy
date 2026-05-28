@@ -638,6 +638,7 @@ internal partial class MainForm : Form
         foreach (ModelMapping mapping in _settings.ModelMappings)
         {
             int idx = _dgvMappings.Rows.Add(
+                mapping.IsEnabled ? "Yes" : "No",
                 mapping.ProxyName,
                 mapping.ModelName,
                 mapping.UpstreamUrl,
@@ -649,6 +650,7 @@ internal partial class MainForm : Form
             // on the row Tag — these fields are edited in the modal Configure dialog.
             row.Tag = new ModelMapping
             {
+                IsEnabled = mapping.IsEnabled,
                 ProxyName = mapping.ProxyName,
                 ModelName = mapping.ModelName,
                 EnableThinkingCompatibility = mapping.EnableThinkingCompatibility,
@@ -805,6 +807,7 @@ internal partial class MainForm : Form
                 {
                     ProxyName              = trimmedProxy,
                     ModelName              = modelName.Trim(),
+                    IsEnabled              = advanced?.IsEnabled ?? true,
                     EnableThinkingCompatibility = advanced?.EnableThinkingCompatibility ?? true,
                     EnableHeartbeats       = advanced?.EnableHeartbeats ?? true,
                     ApiKey                 = advanced?.ApiKey,
@@ -868,6 +871,7 @@ internal partial class MainForm : Form
             return;
 
         int idx = _dgvMappings.Rows.Add(
+            mapping.IsEnabled ? "Yes" : "No",
             mapping.ProxyName,
             mapping.ModelName,
             mapping.UpstreamUrl,
@@ -923,6 +927,7 @@ internal partial class MainForm : Form
         {
             // Write user-edited values back into the grid cells. The grid is read-only;
             // these values come exclusively from the modal.
+            row.Cells[_colMappingEnabled.Name].Value = mapping.IsEnabled ? "Yes" : "No";
             row.Cells[_colProxyName.Name].Value = mapping.ProxyName;
             row.Cells[_colModelName.Name].Value = mapping.ModelName;
             row.Cells[_colUpstreamUrl.Name].Value = mapping.UpstreamUrl;
@@ -1135,7 +1140,7 @@ internal partial class MainForm : Form
             _testProxyNameToMapping.Clear();
 
             List<ModelMapping> mappings = [.. _settings.ModelMappings
-                .Where(m => !string.IsNullOrWhiteSpace(m.ProxyName))
+                .Where(m => m.IsEnabled && !string.IsNullOrWhiteSpace(m.ProxyName))
                 .OrderBy(m => m.ProxyName, StringComparer.OrdinalIgnoreCase)];
 
             if (mappings.Count == 0)

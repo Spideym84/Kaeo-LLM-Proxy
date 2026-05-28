@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Kaeo.LlmProxy.Core.Models;
 using Serilog;
 
@@ -66,7 +67,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             string key = modelName.Trim();
             activeKeys.Add(key);
 
-            if (!_settings.EnableStreamingHeartbeats || !mapping.EnableHeartbeats)
+            if (!mapping.IsEnabled || !_settings.EnableStreamingHeartbeats || !mapping.EnableHeartbeats)
             {
                 if (_periodicHeartbeats.TryRemove(key, out PeriodicHeartbeatState? removed))
                     removed.Dispose();
@@ -166,9 +167,10 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
         // Fallback: if model name is empty/null and we have at least one mapping,
         // use the first configured mapping's upstream URL (common for single-model setups)
-        if (string.IsNullOrWhiteSpace(ollamaModel) && _settings.ModelMappings.Count > 0)
+        if (string.IsNullOrWhiteSpace(ollamaModel))
         {
-            ModelMapping fallback = _settings.ModelMappings[0];
+            ModelMapping fallback = _settings.ModelMappings.FirstOrDefault(m => m.IsEnabled)
+                ?? throw new InvalidOperationException("No enabled model mappings are configured.");
             if (string.IsNullOrWhiteSpace(fallback.UpstreamUrl))
                 throw new InvalidOperationException(
                     $"Model mapping '{fallback.ProxyName}' has no upstream URL configured. " +
@@ -880,14 +882,9 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         var tags = new OllamaTagsResponse
         {
             Models = [.. _settings.ModelMappings
-                .Where(m => !string.IsNullOrWhiteSpace(m.ProxyName))
+                .Where(m => m.IsEnabled && !string.IsNullOrWhiteSpace(m.ProxyName))
                 .OrderBy(m => m.ProxyName, StringComparer.OrdinalIgnoreCase)
-                .Select(m => new OllamaModelEntry
-            {
-                Name = m.ProxyName,
-                Model = m.ProxyName,
-                ModifiedAt = DateTime.UtcNow.ToString("o"),
-            })],
+                .Select(CreateOllamaModelEntry)],
         };
 
         log.StatusCode = 200;
@@ -927,12 +924,14 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
     {
         string body = await ReadBodyAsync(req, ct);
         OllamaShowRequest? showReq = JsonSerializer.Deserialize<OllamaShowRequest>(body, _jsonOptions);
-        string modelName = _settings.ResolveModelName(showReq?.Model ?? showReq?.Name ?? string.Empty);
+        string requestedModel = showReq?.Model ?? showReq?.Name ?? string.Empty;
+        ModelMapping? mapping = _settings.FindModelMapping(requestedModel);
+        string modelName = mapping?.ModelName ?? _settings.ResolveModelName(requestedModel);
         log.Model = modelName;
         if (_settings.CollectRequestDetails)
-            log.RequestBody = RedactRequestBodyForLog(body, showReq?.Model ?? showReq?.Name ?? string.Empty);
+            log.RequestBody = RedactRequestBodyForLog(body, requestedModel);
 
-        var (showBase, showTimeout, showApiKey) = ResolveUpstream(showReq?.Model ?? showReq?.Name ?? string.Empty);
+        var (showBase, showTimeout, showApiKey) = ResolveUpstream(requestedModel);
         using var showReqMsg = new HttpRequestMessage(HttpMethod.Get, $"/v1/models/{Uri.EscapeDataString(modelName)}");
         ApplyApiKey(showReqMsg, showApiKey);
         using HttpResponseMessage upstreamResp = await SendUpstreamAsync(showReqMsg, showBase, showTimeout, HttpCompletionOption.ResponseContentRead, ct);
@@ -956,8 +955,10 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
         var showResp = new OllamaShowResponse
         {
-            Model = model?.Id ?? modelName,
-            Details = new OllamaModelDetails { Family = modelName },
+            Model = mapping?.ProxyName ?? model?.Id ?? modelName,
+            Details = CreateOllamaModelDetails(model ?? new LlamaCppModel { Id = modelName }),
+            ModelInfo = CreateOllamaModelInfo(mapping, model),
+            Capabilities = ["completion", "tools"],
         };
 
         log.Status = upstreamResp.IsSuccessStatusCode || model is not null ? RequestStatus.Success : RequestStatus.Error;
@@ -989,6 +990,89 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             string.Equals(m.Id, modelName, StringComparison.OrdinalIgnoreCase));
 
         return model ?? new LlamaCppModel { Id = modelName };
+    }
+
+    private static OllamaModelEntry CreateOllamaModelEntry(ModelMapping mapping)
+    {
+        string modelName = string.IsNullOrWhiteSpace(mapping.ProxyName) ? mapping.ModelName : mapping.ProxyName;
+
+        return new OllamaModelEntry
+        {
+            Name = modelName,
+            Model = modelName,
+            ModifiedAt = DateTime.UtcNow.ToString("o"),
+            Details = CreateOllamaModelDetails(new LlamaCppModel { Id = mapping.ModelName }),
+        };
+    }
+
+    private static OllamaModelDetails CreateOllamaModelDetails(LlamaCppModel model)
+    {
+        string family = GetModelFamily(model.Id);
+
+        return new OllamaModelDetails
+        {
+            Format = "openai-compatible",
+            Family = family,
+            ParameterSize = GetParameterSize(model.Id),
+            QuantizationLevel = GetQuantizationLevel(model.Id),
+        };
+    }
+
+    private static Dictionary<string, object> CreateOllamaModelInfo(ModelMapping? mapping, LlamaCppModel? model)
+    {
+        string id = model?.Id ?? mapping?.ModelName ?? string.Empty;
+        Dictionary<string, object> modelInfo = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["general.architecture"] = GetModelFamily(id),
+            ["general.basename"] = id,
+            ["proxy.upstream_type"] = mapping?.UpstreamType.ToDisplayName() ?? UpstreamType.OpenAI.ToDisplayName(),
+        };
+
+        if (!string.IsNullOrWhiteSpace(mapping?.ProxyName))
+            modelInfo["proxy.name"] = mapping.ProxyName;
+
+        if (!string.IsNullOrWhiteSpace(mapping?.UpstreamUrl))
+            modelInfo["proxy.upstream_url"] = mapping.UpstreamUrl;
+
+        if (!string.IsNullOrWhiteSpace(model?.OwnedBy))
+            modelInfo["openai.owned_by"] = model.OwnedBy;
+
+        if (model?.Created > 0)
+            modelInfo["openai.created"] = model.Created;
+
+        return modelInfo;
+    }
+
+    private static string GetModelFamily(string modelId)
+    {
+        if (string.IsNullOrWhiteSpace(modelId))
+            return "openai-compatible";
+
+        string lowered = modelId.ToLowerInvariant();
+
+        return lowered switch
+        {
+            string value when value.Contains("llama", StringComparison.Ordinal) => "llama",
+            string value when value.Contains("mistral", StringComparison.Ordinal) => "mistral",
+            string value when value.Contains("qwen", StringComparison.Ordinal) => "qwen",
+            string value when value.Contains("phi", StringComparison.Ordinal) => "phi",
+            string value when value.Contains("gemma", StringComparison.Ordinal) => "gemma",
+            string value when value.Contains("deepseek", StringComparison.Ordinal) => "deepseek",
+            string value when value.Contains("gpt", StringComparison.Ordinal) => "gpt",
+            _ => modelId,
+        };
+    }
+
+    private static string GetParameterSize(string modelId)
+    {
+        Match match = Regex.Match(modelId, @"(?<size>\d+(?:\.\d+)?)[bB](?![A-Za-z])");
+        return match.Success ? $"{match.Groups["size"].Value}B" : string.Empty;
+    }
+
+    private static string GetQuantizationLevel(string modelId)
+    {
+        Match match = Regex.Match(modelId, @"(?<quant>q\d(?:_[a-z0-9]+)?)", RegexOptions.IgnoreCase);
+        return match.Success ? match.Groups["quant"].Value.ToUpperInvariant() : string.Empty;
     }
 
     // ── /api/generate → POST /v1/completions ───────────────────────────────
@@ -2010,6 +2094,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
         private static ModelMapping CloneMapping(ModelMapping mapping) => new()
         {
+            IsEnabled = mapping.IsEnabled,
             ProxyName = mapping.ProxyName,
             ModelName = mapping.ModelName,
             EnableThinkingCompatibility = mapping.EnableThinkingCompatibility,

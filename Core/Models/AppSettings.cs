@@ -82,6 +82,9 @@ internal sealed class RuntimeSettings
 /// <summary>Maps an externally exposed proxy model name to a specific upstream server and model name.</summary>
 internal sealed class ModelMapping
 {
+    /// <summary>When false, this mapping is hidden from discovery and ignored for request routing.</summary>
+    public bool IsEnabled { get; set; } = true;
+
     /// <summary>The model name as exposed by this proxy to clients (e.g. "llama3").</summary>
     [JsonPropertyName("OllamaName")]
     public string ProxyName { get; set; } = string.Empty;
@@ -376,14 +379,14 @@ internal sealed class AppSettings
     }
 
     /// <summary>
-    /// Resolves a requested model name to the llama.cpp model name.
-    /// Returns the mapped llama.cpp name if found, otherwise returns the original name unchanged.
+    /// Resolves a requested model name to the upstream model name.
+    /// Returns the mapped upstream name if an enabled mapping is found, otherwise returns the original name unchanged.
     /// </summary>
     public string ResolveModelName(string requestedModel)
     {
         foreach (ModelMapping mapping in ModelMappings)
         {
-            if (string.Equals(mapping.ProxyName, requestedModel, StringComparison.OrdinalIgnoreCase))
+            if (mapping.IsEnabled && string.Equals(mapping.ProxyName, requestedModel, StringComparison.OrdinalIgnoreCase))
                 return mapping.ModelName;
         }
 
@@ -391,13 +394,16 @@ internal sealed class AppSettings
     }
 
     /// <summary>
-    /// Finds a model mapping by either the exposed proxy name or the upstream model name.
-    /// Returns null when no configured mapping matches.
+    /// Finds an enabled model mapping by either the exposed proxy name or the upstream model name.
+    /// Returns null when no enabled configured mapping matches.
     /// </summary>
     public ModelMapping? FindModelMapping(string requestedModel)
     {
         foreach (ModelMapping mapping in ModelMappings)
         {
+            if (!mapping.IsEnabled)
+                continue;
+
             if (string.Equals(mapping.ProxyName, requestedModel, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(mapping.ModelName, requestedModel, StringComparison.OrdinalIgnoreCase))
             {

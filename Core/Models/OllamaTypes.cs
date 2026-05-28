@@ -135,6 +135,7 @@ internal sealed class OllamaShowResponse
     [JsonPropertyName("modified_at")] public string ModifiedAt { get; set; } = DateTime.UtcNow.ToString("o");
     [JsonPropertyName("details")] public OllamaModelDetails? Details { get; set; }
     [JsonPropertyName("modelinfo")] public Dictionary<string, object>? ModelInfo { get; set; }
+    [JsonPropertyName("capabilities")] public List<string>? Capabilities { get; set; }
 }
 
 // ─────────────────────────── /api/embeddings ──────────────────────────────

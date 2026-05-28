@@ -40,6 +40,7 @@ internal sealed class ModelMappingDialog : Form
     private readonly NumericUpDown _nudTemperature = new();
     private readonly Label _lblRepeatPenalty = new();
     private readonly NumericUpDown _nudRepeatPenalty = new();
+    private readonly CheckBox _chkIsEnabled = new();
     private readonly CheckBox _chkEnableThinkingCompatibility = new();
     private readonly CheckBox _chkEnableHeartbeats = new();
     private readonly CheckBox _chkRedactRequestBodies = new();
@@ -182,7 +183,8 @@ internal sealed class ModelMappingDialog : Form
         _tlpMain.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         _tlpMain.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         _tlpMain.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        _tlpMain.RowCount = 15;
+        _tlpMain.RowCount = 16;
+        _tlpMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _tlpMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _tlpMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _tlpMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -237,18 +239,20 @@ internal sealed class ModelMappingDialog : Form
         _tlpMain.SetColumnSpan(_nudRepeatPenalty, 2);
         _tlpMain.Controls.Add(_nudRepeatPenalty, 1, 8);
 
+        _tlpMain.SetColumnSpan(_chkIsEnabled, 3);
+        _tlpMain.Controls.Add(_chkIsEnabled, 0, 9);
         _tlpMain.SetColumnSpan(_chkEnableThinkingCompatibility, 3);
-        _tlpMain.Controls.Add(_chkEnableThinkingCompatibility, 0, 9);
+        _tlpMain.Controls.Add(_chkEnableThinkingCompatibility, 0, 10);
         _tlpMain.SetColumnSpan(_chkEnableHeartbeats, 3);
-        _tlpMain.Controls.Add(_chkEnableHeartbeats, 0, 10);
+        _tlpMain.Controls.Add(_chkEnableHeartbeats, 0, 11);
         _tlpMain.SetColumnSpan(_chkRedactRequestBodies, 3);
-        _tlpMain.Controls.Add(_chkRedactRequestBodies, 0, 11);
+        _tlpMain.Controls.Add(_chkRedactRequestBodies, 0, 12);
         _tlpMain.SetColumnSpan(_chkRedactResponseBodies, 3);
-        _tlpMain.Controls.Add(_chkRedactResponseBodies, 0, 12);
+        _tlpMain.Controls.Add(_chkRedactResponseBodies, 0, 13);
         _tlpMain.SetColumnSpan(_chkRedactSensitiveJsonFields, 3);
-        _tlpMain.Controls.Add(_chkRedactSensitiveJsonFields, 0, 13);
+        _tlpMain.Controls.Add(_chkRedactSensitiveJsonFields, 0, 14);
         _tlpMain.SetColumnSpan(_flpButtons, 3);
-        _tlpMain.Controls.Add(_flpButtons, 0, 14);
+        _tlpMain.Controls.Add(_flpButtons, 0, 15);
 
         _lblProxyName.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         _lblProxyName.AutoSize = true;
@@ -345,8 +349,13 @@ internal sealed class ModelMappingDialog : Form
         _nudRepeatPenalty.Size = new Size(90, 25);
         _nudRepeatPenalty.Value = 1.0M;
 
+        _chkIsEnabled.AutoSize = true;
+        _chkIsEnabled.Margin = new Padding(0, 8, 0, 2);
+        _chkIsEnabled.Text = "Enable this proxy model";
+        _chkIsEnabled.Checked = true;
+
         _chkEnableThinkingCompatibility.AutoSize = true;
-        _chkEnableThinkingCompatibility.Margin = new Padding(0, 8, 0, 2);
+        _chkEnableThinkingCompatibility.Margin = new Padding(0, 2, 0, 2);
         _chkEnableThinkingCompatibility.Text = "Enable thinking compatibility (strip assistant response-prefill turns)";
 
         _chkEnableHeartbeats.AutoSize = true;
@@ -517,6 +526,7 @@ internal sealed class ModelMappingDialog : Form
         dlg._upstreamUrl = mapping.UpstreamUrl ?? string.Empty;
         dlg.PopulateModelItems(existingModelItems, mapping.ModelName);
         dlg.InstructionSetName = mapping.InstructionSetName;
+        dlg._chkIsEnabled.Checked = mapping.IsEnabled;
         dlg.EnableThinkingCompatibility = mapping.EnableThinkingCompatibility;
         dlg.EnableHeartbeats = mapping.EnableHeartbeats;
         dlg.UpstreamTimeoutSeconds = mapping.UpstreamTimeoutSeconds;
@@ -534,6 +544,7 @@ internal sealed class ModelMappingDialog : Form
             return false;
 
         mapping.ProxyName = dlg._txtProxyName.Text.Trim();
+        mapping.IsEnabled = dlg._chkIsEnabled.Checked;
         mapping.UpstreamUrl = dlg._txtUpstreamUrl.Text.Trim();
         mapping.ApiKey = string.IsNullOrWhiteSpace(dlg._txtApiKey.Text)
             ? null

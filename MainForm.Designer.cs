@@ -90,6 +90,7 @@ partial class MainForm
         _txtMaxLogs = new TextBox();
         _lblMappings = new Label();
         _dgvMappings = new DataGridView();
+        _colMappingEnabled = new DataGridViewTextBoxColumn();
         _colProxyName = new DataGridViewTextBoxColumn();
         _colModelName = new DataGridViewTextBoxColumn();
         _colUpstreamUrl = new DataGridViewTextBoxColumn();
@@ -682,6 +683,7 @@ partial class MainForm
         _dgvMappings.EditMode = DataGridViewEditMode.EditProgrammatically;
         _dgvMappings.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
         _dgvMappings.MultiSelect = false;
+        _dgvMappings.Columns.Add(_colMappingEnabled);
         _dgvMappings.Columns.Add(_colProxyName);
         _dgvMappings.Columns.Add(_colModelName);
         _dgvMappings.Columns.Add(_colUpstreamUrl);
@@ -691,6 +693,11 @@ partial class MainForm
         _dgvMappings.MinimumSize = new Size(0, 120);
         _dgvMappings.Name = "_dgvMappings";
         _dgvMappings.CellDoubleClick += DgvMappings_CellDoubleClick;
+
+        _colMappingEnabled.HeaderText = "Enabled";
+        _colMappingEnabled.Name = "_colMappingEnabled";
+        _colMappingEnabled.Width = 70;
+        _colMappingEnabled.FillWeight = 45;
 
         _colProxyName.HeaderText = "Proxy Name";
         _colProxyName.Name = "_colProxyName";
@@ -1316,6 +1323,7 @@ partial class MainForm
     private TextBox _txtMaxLogs;
     private Label _lblMappings;
     private DataGridView _dgvMappings;
+    private DataGridViewTextBoxColumn _colMappingEnabled;
     private DataGridViewTextBoxColumn _colProxyName;
     private DataGridViewTextBoxColumn _colModelName;
     private DataGridViewTextBoxColumn _colUpstreamUrl;
