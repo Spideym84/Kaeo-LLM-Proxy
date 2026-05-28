@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Kaeo.LlmProxy.Core.Models;
 using Serilog;
@@ -503,18 +504,33 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         bool isServerSentEvents = IsServerSentEventsResponse(upstreamResp);
 
         using CountingStream countingStream = new(resp.OutputStream);
+        bool shouldMirrorReasoningContent = IsChatCompletionsPath(req.Url?.AbsolutePath);
+
         if (_settings.CollectResponseDetails)
         {
             using ResponseCaptureStream captureStream = new(countingStream);
             if (isServerSentEvents)
             {
-                await CopyStreamWithSseHeartbeatsAsync(
-                    upstreamStream,
-                    captureStream,
-                    ShouldEmitHeartbeats(originalModel),
-                    _settings.StreamingHeartbeatIntervalSeconds,
-                    ct,
-                    () => _stats.IncrementHeartbeat(originalModel));
+                if (shouldMirrorReasoningContent)
+                {
+                    await CopyOpenAiChatCompletionSseStreamAsync(
+                        upstreamStream,
+                        captureStream,
+                        ShouldEmitHeartbeats(originalModel),
+                        _settings.StreamingHeartbeatIntervalSeconds,
+                        ct,
+                        () => _stats.IncrementHeartbeat(originalModel));
+                }
+                else
+                {
+                    await CopyStreamWithSseHeartbeatsAsync(
+                        upstreamStream,
+                        captureStream,
+                        ShouldEmitHeartbeats(originalModel),
+                        _settings.StreamingHeartbeatIntervalSeconds,
+                        ct,
+                        () => _stats.IncrementHeartbeat(originalModel));
+                }
             }
             else
             {
@@ -525,13 +541,26 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         }
         else if (isServerSentEvents)
         {
-            await CopyStreamWithSseHeartbeatsAsync(
-                upstreamStream,
-                countingStream,
-                ShouldEmitHeartbeats(originalModel),
-                _settings.StreamingHeartbeatIntervalSeconds,
-                ct,
-                () => _stats.IncrementHeartbeat(originalModel));
+            if (shouldMirrorReasoningContent)
+            {
+                await CopyOpenAiChatCompletionSseStreamAsync(
+                    upstreamStream,
+                    countingStream,
+                    ShouldEmitHeartbeats(originalModel),
+                    _settings.StreamingHeartbeatIntervalSeconds,
+                    ct,
+                    () => _stats.IncrementHeartbeat(originalModel));
+            }
+            else
+            {
+                await CopyStreamWithSseHeartbeatsAsync(
+                    upstreamStream,
+                    countingStream,
+                    ShouldEmitHeartbeats(originalModel),
+                    _settings.StreamingHeartbeatIntervalSeconds,
+                    ct,
+                    () => _stats.IncrementHeartbeat(originalModel));
+            }
         }
         else
         {
@@ -554,6 +583,9 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         return response.Headers.TryGetValues("X-Accel-Buffering", out IEnumerable<string>? values)
             && values.Any(value => value.Equals("no", StringComparison.OrdinalIgnoreCase));
     }
+
+    private static bool IsChatCompletionsPath(string? path) =>
+        path?.Equals("/v1/chat/completions", StringComparison.OrdinalIgnoreCase) == true;
 
     private static async Task CopyStreamWithSseHeartbeatsAsync(
         Stream source,
@@ -590,6 +622,97 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
             await destination.WriteAsync(buffer.AsMemory(0, bytesRead), ct);
             await destination.FlushAsync(ct);
+        }
+    }
+
+    private static async Task CopyOpenAiChatCompletionSseStreamAsync(
+        Stream source,
+        Stream destination,
+        bool enableHeartbeats,
+        int heartbeatIntervalSeconds,
+        CancellationToken ct,
+        Action? onHeartbeatSent = null)
+    {
+        using StreamReader reader = new(source, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+        byte[] heartbeatBytes = Encoding.UTF8.GetBytes(": kaeo-heartbeat\n\n");
+        TimeSpan heartbeatInterval = TimeSpan.FromSeconds(Math.Clamp(heartbeatIntervalSeconds, 5, 300));
+
+        while (!ct.IsCancellationRequested)
+        {
+            Task<string?> readTask = reader.ReadLineAsync(ct).AsTask();
+
+            while (enableHeartbeats && !readTask.IsCompleted)
+            {
+                Task delayTask = Task.Delay(heartbeatInterval, ct);
+                Task completed = await Task.WhenAny(readTask, delayTask);
+                if (completed == readTask)
+                    break;
+
+                await destination.WriteAsync(heartbeatBytes, ct);
+                await destination.FlushAsync(ct);
+                onHeartbeatSent?.Invoke();
+            }
+
+            string? line = await readTask;
+            if (line is null)
+                break;
+
+            string outgoingLine = MirrorReasoningContentToContent(line);
+            byte[] lineBytes = Encoding.UTF8.GetBytes(outgoingLine + "\n");
+            await destination.WriteAsync(lineBytes, ct);
+            await destination.FlushAsync(ct);
+        }
+    }
+
+    private static string MirrorReasoningContentToContent(string line)
+    {
+        const string dataPrefix = "data:";
+
+        if (!line.StartsWith(dataPrefix, StringComparison.Ordinal))
+            return line;
+
+        string data = line[dataPrefix.Length..];
+        if (data.StartsWith(' '))
+            data = data[1..];
+
+        if (data.Length == 0 || data == "[DONE]")
+            return line;
+
+        try
+        {
+            JsonNode? node = JsonNode.Parse(data);
+            if (node is not JsonObject root
+                || root["choices"] is not JsonArray choices)
+            {
+                return line;
+            }
+
+            bool changed = false;
+            foreach (JsonNode? choiceNode in choices)
+            {
+                if (choiceNode is not JsonObject choice
+                    || choice["delta"] is not JsonObject delta
+                    || delta["reasoning_content"] is not JsonValue reasoningValue)
+                {
+                    continue;
+                }
+
+                if (!reasoningValue.TryGetValue(out string? reasoningContent)
+                    || string.IsNullOrEmpty(reasoningContent)
+                    || delta.TryGetPropertyValue("content", out JsonNode? contentNode) && contentNode is not null)
+                {
+                    continue;
+                }
+
+                delta["content"] = reasoningContent;
+                changed = true;
+            }
+
+            return changed ? $"data: {root.ToJsonString(_jsonOptions)}" : line;
+        }
+        catch (JsonException)
+        {
+            return line;
         }
     }
 
