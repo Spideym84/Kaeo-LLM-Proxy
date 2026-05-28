@@ -1,6 +1,7 @@
 using System.Net;
 using Kaeo.LlmProxy.Core.Models;
 using Kaeo.LlmProxy.Core.Services;
+using Serilog;
 
 namespace Kaeo.LlmProxy.Infrastructure;
 
@@ -117,8 +118,40 @@ internal sealed class ProxyServer(OllamaProxyHandler handler) : IDisposable
                 break;
             }
 
-            // Fire-and-forget each request on the thread pool — we track errors inside the handler.
-            _ = Task.Run(() => _handler.HandleAsync(context, ct), ct);
+            // Fire-and-forget each request on the thread pool. Exceptions are observed
+            // here so a client disconnect (HttpListenerException / I/O abort) never
+            // surfaces as an unobserved TaskScheduler exception.
+            _ = Task.Run(() => HandleRequestSafelyAsync(context, ct), ct);
+        }
+    }
+
+    private async Task HandleRequestSafelyAsync(HttpListenerContext context, CancellationToken ct)
+    {
+        try
+        {
+            await _handler.HandleAsync(context, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Server is stopping or the request was cancelled — expected, ignore.
+        }
+        catch (HttpListenerException ex)
+        {
+            // Client disconnected mid-request (e.g. idle keep-alive drop). Common and benign.
+            Log.Debug(ex, "Client connection aborted while handling request");
+        }
+        catch (ObjectDisposedException)
+        {
+            // Response stream was already closed by a disconnect. Benign.
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Unhandled error while processing proxy request");
+        }
+        finally
+        {
+            try { context.Response.Close(); }
+            catch { /* Already closed or aborted. */ }
         }
     }
 
