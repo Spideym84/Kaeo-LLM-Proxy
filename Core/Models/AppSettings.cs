@@ -3,11 +3,37 @@ using System.Text.Json.Serialization;
 
 namespace Kaeo.LlmProxy.Core.Models;
 
-/// <summary>The upstream server type this mapping targets.</summary>
+/// <summary>The upstream API compatibility this mapping targets.</summary>
 internal enum UpstreamType
 {
+    /// <summary>Legacy persisted value. Treat as OpenAI-compatible.</summary>
     LlamaCpp,
+
+    /// <summary>OpenAI-compatible /v1 API, including llama.cpp server and hosted OpenAI-style services.</summary>
     OpenAI,
+}
+
+internal static class UpstreamTypeExtensions
+{
+    public static string ToDisplayName(this UpstreamType upstreamType) => upstreamType switch
+    {
+        UpstreamType.LlamaCpp or UpstreamType.OpenAI => "OpenAI Compatible",
+        _ => upstreamType.ToString(),
+    };
+
+    public static UpstreamType FromDisplayName(string? displayName)
+    {
+        if (string.Equals(displayName, "OpenAI Compatible", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(displayName, "OpenAI", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(displayName, "LlamaCpp", StringComparison.OrdinalIgnoreCase))
+        {
+            return UpstreamType.OpenAI;
+        }
+
+        return Enum.TryParse(displayName, out UpstreamType parsed)
+            ? parsed
+            : UpstreamType.OpenAI;
+    }
 }
 
 /// <summary>Named custom instruction set that can be injected into AI requests.</summary>
@@ -72,8 +98,8 @@ internal sealed class ModelMapping
     /// </summary>
     public bool EnableHeartbeats { get; set; } = true;
 
-    /// <summary>Upstream backend for this mapping. Only LlamaCpp is supported currently.</summary>
-    public UpstreamType UpstreamType { get; set; } = UpstreamType.LlamaCpp;
+    /// <summary>Upstream API compatibility for this mapping. Defaults to OpenAI-compatible /v1.</summary>
+    public UpstreamType UpstreamType { get; set; } = UpstreamType.OpenAI;
 
     /// <summary>
     /// Optional bearer API key used when forwarding requests to OpenAI-compatible online services.

@@ -538,9 +538,7 @@ internal sealed class ModelMappingDialog : Form
         mapping.ApiKey = string.IsNullOrWhiteSpace(dlg._txtApiKey.Text)
             ? null
             : dlg._txtApiKey.Text.Trim();
-        mapping.UpstreamType = dlg._cmbUpstreamType.SelectedItem is UpstreamType ut
-            ? ut
-            : UpstreamType.LlamaCpp;
+        mapping.UpstreamType = UpstreamTypeExtensions.FromDisplayName(dlg._cmbUpstreamType.SelectedItem?.ToString());
         mapping.ModelName = (dlg._cmbModelName.SelectedItem?.ToString() ?? dlg._cmbModelName.Text ?? string.Empty).Trim();
         mapping.InstructionSetName = dlg.InstructionSetName;
         mapping.EnableThinkingCompatibility = dlg.EnableThinkingCompatibility;
@@ -557,12 +555,7 @@ internal sealed class ModelMappingDialog : Form
     private void PopulateUpstreamTypes(UpstreamType selected)
     {
         _cmbUpstreamType.Items.Clear();
-        foreach (UpstreamType value in Enum.GetValues<UpstreamType>())
-        {
-            _cmbUpstreamType.Items.Add(value);
-        }
-        _cmbUpstreamType.SelectedItem = selected;
-        if (_cmbUpstreamType.SelectedIndex < 0 && _cmbUpstreamType.Items.Count > 0)
-            _cmbUpstreamType.SelectedIndex = 0;
+        _cmbUpstreamType.Items.Add(UpstreamType.OpenAI.ToDisplayName());
+        _cmbUpstreamType.SelectedItem = selected.ToDisplayName();
     }
 }

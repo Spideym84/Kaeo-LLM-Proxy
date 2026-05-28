@@ -926,7 +926,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         await WriteJsonAsync(resp, new { models = running }, ct);
     }
 
-    // ── /api/show → GET /v1/models/{id} ────────────────────────────────────
+    // ── /api/show → GET /v1/models/{id}, fallback GET /v1/models ───────────
 
     private async Task HandleShowAsync(HttpListenerRequest req, HttpListenerResponse resp, RequestLog log, CancellationToken ct)
     {
@@ -940,11 +940,24 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         var (showBase, showTimeout, showApiKey) = ResolveUpstream(showReq?.Model ?? showReq?.Name ?? string.Empty);
         using var showReqMsg = new HttpRequestMessage(HttpMethod.Get, $"/v1/models/{Uri.EscapeDataString(modelName)}");
         ApplyApiKey(showReqMsg, showApiKey);
-        HttpResponseMessage upstreamResp = await SendUpstreamAsync(showReqMsg, showBase, showTimeout, HttpCompletionOption.ResponseContentRead, ct);
-        log.StatusCode = (int)upstreamResp.StatusCode;
+        using HttpResponseMessage upstreamResp = await SendUpstreamAsync(showReqMsg, showBase, showTimeout, HttpCompletionOption.ResponseContentRead, ct);
 
         string upstreamBody = await upstreamResp.Content.ReadAsStringAsync(ct);
-        LlamaCppModel? model = JsonSerializer.Deserialize<LlamaCppModel>(upstreamBody, _jsonOptions);
+        LlamaCppModel? model = null;
+
+        if (upstreamResp.IsSuccessStatusCode)
+        {
+            model = JsonSerializer.Deserialize<LlamaCppModel>(upstreamBody, _jsonOptions);
+        }
+        else if (upstreamResp.StatusCode == HttpStatusCode.NotFound)
+        {
+            model = await TryFindModelFromListAsync(modelName, showBase, showTimeout, showApiKey, ct);
+        }
+
+        resp.StatusCode = upstreamResp.IsSuccessStatusCode || model is not null
+            ? 200
+            : (int)upstreamResp.StatusCode;
+        log.StatusCode = resp.StatusCode;
 
         var showResp = new OllamaShowResponse
         {
@@ -952,8 +965,35 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             Details = new OllamaModelDetails { Family = modelName },
         };
 
-        log.Status = upstreamResp.IsSuccessStatusCode ? RequestStatus.Success : RequestStatus.Error;
+        log.Status = upstreamResp.IsSuccessStatusCode || model is not null ? RequestStatus.Success : RequestStatus.Error;
         await WriteJsonAsync(resp, showResp, ct);
+    }
+
+    private async Task<LlamaCppModel?> TryFindModelFromListAsync(
+        string modelName,
+        string baseUrl,
+        int timeoutSeconds,
+        string? apiKey,
+        CancellationToken ct)
+    {
+        using var listReqMsg = new HttpRequestMessage(HttpMethod.Get, "/v1/models");
+        ApplyApiKey(listReqMsg, apiKey);
+        using HttpResponseMessage listResp = await SendUpstreamAsync(
+            listReqMsg,
+            baseUrl,
+            timeoutSeconds,
+            HttpCompletionOption.ResponseContentRead,
+            ct);
+
+        if (!listResp.IsSuccessStatusCode)
+            return null;
+
+        string body = await listResp.Content.ReadAsStringAsync(ct);
+        LlamaCppModelsResponse? models = JsonSerializer.Deserialize<LlamaCppModelsResponse>(body, _jsonOptions);
+        LlamaCppModel? model = models?.Data.FirstOrDefault(m =>
+            string.Equals(m.Id, modelName, StringComparison.OrdinalIgnoreCase));
+
+        return model ?? new LlamaCppModel { Id = modelName };
     }
 
     // ── /api/generate → POST /v1/completions ───────────────────────────────

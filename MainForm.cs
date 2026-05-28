@@ -641,7 +641,7 @@ internal partial class MainForm : Form
                 mapping.ProxyName,
                 mapping.ModelName,
                 mapping.UpstreamUrl,
-                mapping.UpstreamType.ToString());
+                mapping.UpstreamType.ToDisplayName());
 
             DataGridViewRow row = _dgvMappings.Rows[idx];
 
@@ -799,9 +799,7 @@ internal partial class MainForm : Form
                     return;
                 }
 
-                UpstreamType upstream = Enum.TryParse(upstreamStr, out UpstreamType parsed)
-                    ? parsed
-                    : UpstreamType.LlamaCpp;
+                UpstreamType upstream = UpstreamTypeExtensions.FromDisplayName(upstreamStr);
 
                 _settings.ModelMappings.Add(new ModelMapping
                 {
@@ -873,7 +871,7 @@ internal partial class MainForm : Form
             mapping.ProxyName,
             mapping.ModelName,
             mapping.UpstreamUrl,
-            mapping.UpstreamType.ToString());
+            mapping.UpstreamType.ToDisplayName());
 
         DataGridViewRow row = _dgvMappings.Rows[idx];
         row.Tag = mapping;
@@ -928,7 +926,7 @@ internal partial class MainForm : Form
             row.Cells[_colProxyName.Name].Value = mapping.ProxyName;
             row.Cells[_colModelName.Name].Value = mapping.ModelName;
             row.Cells[_colUpstreamUrl.Name].Value = mapping.UpstreamUrl;
-            row.Cells[_colUpstreamType.Name].Value = mapping.UpstreamType.ToString();
+            row.Cells[_colUpstreamType.Name].Value = mapping.UpstreamType.ToDisplayName();
         }
     }
 

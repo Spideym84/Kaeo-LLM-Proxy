@@ -674,7 +674,7 @@ partial class MainForm
         _lblMappings.AutoSize = true;
         _lblMappings.Margin = new Padding(4, 8, 4, 4);
         _lblMappings.Name = "_lblMappings";
-        _lblMappings.Text = "Model Name Mappings (Proxy → Model):";
+        _lblMappings.Text = "Model Mappings (Proxy → Upstream Model):";
 
         _dgvMappings.AllowUserToAddRows = false;
         _dgvMappings.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
@@ -699,12 +699,12 @@ partial class MainForm
         _colModelName.Name = "_colModelName";
         _colModelName.FillWeight = 120;
 
-        _colUpstreamUrl.HeaderText = "Upstream URL (override)";
+        _colUpstreamUrl.HeaderText = "Upstream URL";
         _colUpstreamUrl.Name = "_colUpstreamUrl";
         _colUpstreamUrl.FillWeight = 160;
         _colUpstreamUrl.DefaultCellStyle.NullValue = string.Empty;
 
-        _colUpstreamType.HeaderText = "Upstream";
+        _colUpstreamType.HeaderText = "Compatibility";
         _colUpstreamType.Name = "_colUpstreamType";
         _colUpstreamType.Width = 110;
         _colUpstreamType.FillWeight = 60;
