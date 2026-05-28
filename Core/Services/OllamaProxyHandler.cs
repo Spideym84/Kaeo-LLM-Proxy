@@ -1019,26 +1019,30 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
     private async Task HandlePsAsync(HttpListenerResponse resp, RequestLog log, CancellationToken ct)
     {
-        var (baseUrl, timeout, apiKey) = ResolveUpstream(string.Empty);
-        using var psReq = new HttpRequestMessage(HttpMethod.Get, "/v1/models");
-        ApplyApiKey(psReq, apiKey);
-        HttpResponseMessage upstreamResp = await SendUpstreamAsync(psReq, baseUrl, timeout, HttpCompletionOption.ResponseContentRead, ct);
-        string body = await upstreamResp.Content.ReadAsStringAsync(ct);
-        LlamaCppModelsResponse? models = JsonSerializer.Deserialize<LlamaCppModelsResponse>(body, _jsonOptions);
-
-        var running = (models?.Data ?? []).Select(m => new
-        {
-            name = m.Id,
-            model = m.Id,
-            size = 0L,
-            digest = string.Empty,
-            details = new { family = m.Id },
-            expires_at = DateTime.UtcNow.AddHours(1).ToString("o"),
-            size_vram = 0L,
-        }).ToList();
+        // Report configured enabled mappings as "running" so clients see the proxy-facing names
+        // rather than whatever ID the upstream happens to advertise. The expires_at field is a
+        // stub — llama.cpp keeps the model permanently loaded.
+        var running = _settings.ModelMappings
+            .Where(m => m.IsEnabled && !string.IsNullOrWhiteSpace(m.ProxyName))
+            .Select(m =>
+            {
+                string name = string.IsNullOrWhiteSpace(m.ProxyName) ? m.ModelName : m.ProxyName;
+                return new
+                {
+                    name,
+                    model = name,
+                    size = 0L,
+                    digest = string.Empty,
+                    details = CreateOllamaModelDetails(new LlamaCppModel { Id = m.ModelName }),
+                    expires_at = DateTime.UtcNow.AddHours(1).ToString("o"),
+                    size_vram = 0L,
+                };
+            })
+            .ToList();
 
         log.Status = RequestStatus.Success;
         await WriteJsonAsync(resp, new { models = running }, ct);
+        await Task.CompletedTask;
     }
 
     // ── /api/show → GET /v1/models/{id}, fallback GET /v1/models ───────────
@@ -1081,7 +1085,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             Model = mapping?.ProxyName ?? model?.Id ?? modelName,
             Details = CreateOllamaModelDetails(model ?? new LlamaCppModel { Id = modelName }),
             ModelInfo = CreateOllamaModelInfo(mapping, model),
-            Capabilities = ["completion", "tools"],
+            Capabilities = BuildCapabilities(mapping, model?.Id ?? modelName),
         };
 
         log.Status = upstreamResp.IsSuccessStatusCode || model is not null ? RequestStatus.Success : RequestStatus.Error;
@@ -1136,9 +1140,40 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         {
             Format = "openai-compatible",
             Family = family,
+            Families = [family],
             ParameterSize = GetParameterSize(model.Id),
             QuantizationLevel = GetQuantizationLevel(model.Id),
         };
+    }
+
+    /// <summary>
+    /// Reports Ollama-style capability tokens. Tools are always supported for OpenAI-compatible
+    /// upstreams; "thinking" is reported when the mapping has thinking compatibility enabled;
+    /// "embedding" is inferred when the model name suggests an embedding model.
+    /// </summary>
+    private static List<string> BuildCapabilities(ModelMapping? mapping, string modelId)
+    {
+        List<string> caps = ["completion", "tools"];
+
+        if (mapping?.EnableThinkingCompatibility ?? true)
+            caps.Add("thinking");
+
+        string lowered = modelId?.ToLowerInvariant() ?? string.Empty;
+        if (lowered.Contains("embed", StringComparison.Ordinal)
+            || lowered.Contains("bge", StringComparison.Ordinal)
+            || lowered.Contains("e5", StringComparison.Ordinal))
+        {
+            caps.Add("embedding");
+        }
+
+        if (lowered.Contains("vision", StringComparison.Ordinal)
+            || lowered.Contains("llava", StringComparison.Ordinal)
+            || lowered.Contains("vl", StringComparison.Ordinal))
+        {
+            caps.Add("vision");
+        }
+
+        return caps;
     }
 
     private static Dictionary<string, object> CreateOllamaModelInfo(ModelMapping? mapping, LlamaCppModel? model)
@@ -1237,17 +1272,22 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             prompt = $"{systemPrefix}\n\n{prompt}";
 
         var llamaReq = new LlamaCppCompletionRequest
-        {
-            Model = resolvedModel,
-            Prompt = prompt,
-            Stream = ollamaReq.Stream,
-            ResponseFormat = ResolveResponseFormat(ollamaReq.Format),
-            Temperature = ollamaReq.Options?.Temperature,
-            TopP = ollamaReq.Options?.TopP,
-            MaxTokens = ollamaReq.Options?.NumPredict,
-            Stop = ollamaReq.Options?.Stop,
-            Seed = ollamaReq.Options?.Seed,
-        };
+            {
+                Model = resolvedModel,
+                Prompt = prompt,
+                Stream = ollamaReq.Stream,
+                ResponseFormat = ResolveResponseFormat(ollamaReq.Format),
+                Temperature = ollamaReq.Options?.Temperature,
+                TopP = ollamaReq.Options?.TopP,
+                TopK = ollamaReq.Options?.TopK,
+                MinP = ollamaReq.Options?.MinP,
+                MaxTokens = ollamaReq.Options?.NumPredict,
+                Stop = ollamaReq.Options?.Stop,
+                Seed = ollamaReq.Options?.Seed,
+                PresencePenalty = ollamaReq.Options?.PresencePenalty,
+                FrequencyPenalty = ollamaReq.Options?.FrequencyPenalty,
+                RepeatPenalty = ollamaReq.Options?.RepeatPenalty,
+            };
 
         using StringContent genContent = new(JsonSerializer.Serialize(llamaReq, _jsonOptions), Encoding.UTF8, "application/json");
         using var genReqMsg = new HttpRequestMessage(HttpMethod.Post, "/v1/completions") { Content = genContent };
@@ -1332,10 +1372,9 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         int preserveRecentCount = mapping?.PreserveRecentMessageCount ?? 4;
         int maxRetries = mapping?.MaxSummarizationRetries ?? 2;
 
-        // Map messages, then strip a trailing assistant response-prefill message.
-        // Some clients append a final assistant turn to bias the next response, which
-        // Anthropic-compatible upstreams reject when enable_thinking is active.
-        List<LlamaCppMessage> messages = [.. ollamaReq.Messages.Select(MapMessage)];
+        // Map messages, preserving / synthesising tool_call IDs so OpenAI-compatible
+        // upstreams can correlate assistant tool_calls with the following role:"tool" replies.
+        List<LlamaCppMessage> messages = MapMessagesWithToolCorrelation(ollamaReq.Messages);
         if (messages.Count > 0
             && ShouldApplyThinkingCompatibility(ollamaReq.Model)
             && IsAssistantResponsePrefill(messages[^1]))
@@ -1369,11 +1408,19 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                 ResponseFormat = ResolveResponseFormat(ollamaReq.Format),
                 Temperature = ollamaReq.Options?.Temperature,
                 TopP = ollamaReq.Options?.TopP,
+                TopK = ollamaReq.Options?.TopK,
+                MinP = ollamaReq.Options?.MinP,
                 MaxTokens = ollamaReq.Options?.NumPredict,
                 Stop = ollamaReq.Options?.Stop,
                 Seed = ollamaReq.Options?.Seed,
                 PresencePenalty = ollamaReq.Options?.PresencePenalty,
                 FrequencyPenalty = ollamaReq.Options?.FrequencyPenalty,
+                RepeatPenalty = ollamaReq.Options?.RepeatPenalty
+                    ?? (mapping is not null && mapping.RepeatPenalty != 1.0 ? (float)mapping.RepeatPenalty : null),
+                Mirostat = ollamaReq.Options?.Mirostat,
+                MirostatTau = ollamaReq.Options?.MirostatTau,
+                MirostatEta = ollamaReq.Options?.MirostatEta,
+                NCtx = ollamaReq.Options?.NumCtx,
             };
 
             using StringContent chatContent = new(JsonSerializer.Serialize(llamaReq, _jsonOptions), Encoding.UTF8, "application/json");
@@ -1484,8 +1531,9 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                 LlamaCppStreamChunk? chunk = JsonSerializer.Deserialize<LlamaCppStreamChunk>(respBody, _jsonOptions);
 
                 // Non-streaming: prefer .message over .delta (OpenAI non-streaming uses message)
-                LlamaCppDelta? delta = chunk?.Choices?.FirstOrDefault()?.Message
-                                    ?? chunk?.Choices?.FirstOrDefault()?.Delta;
+                LlamaCppChoice? firstChoice = chunk?.Choices?.FirstOrDefault();
+                LlamaCppDelta? delta = firstChoice?.Message ?? firstChoice?.Delta;
+                string? upstreamFinishReason = firstChoice?.FinishReason;
                 LlamaCppUsage? usage = chunk?.Usage;
                 FillTokenStats(log, usage);
                 log.ResponseBytes = Encoding.UTF8.GetByteCount(respBody);
@@ -1519,7 +1567,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                     Model = ollamaReq.Model,
                     Message = new OllamaMessage("assistant", content) { ToolCalls = toolCalls },
                     Done = true,
-                    DoneReason = toolCalls?.Count > 0 ? "tool_calls" : "stop",
+                    DoneReason = toolCalls?.Count > 0 ? "tool_calls" : upstreamFinishReason ?? "stop",
                     PromptEvalCount = usage?.PromptTokens,
                     EvalCount = usage?.CompletionTokens,
                 };
@@ -1569,8 +1617,20 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         LlamaCppEmbeddingsResponse? llamaResp = JsonSerializer.Deserialize<LlamaCppEmbeddingsResponse>(respBody, _jsonOptions);
 
         OllamaEmbeddingsResponse ollamaResp = isBatch
-            ? new OllamaEmbeddingsResponse { Embeddings = [.. (llamaResp?.Data ?? []).Select(d => d.Embedding)] }
-            : new OllamaEmbeddingsResponse { Embedding = llamaResp?.Data?.FirstOrDefault()?.Embedding ?? [] };
+            ? new OllamaEmbeddingsResponse
+            {
+                Model = ollamaReq.Model,
+                Embeddings = [.. (llamaResp?.Data ?? []).Select(d => d.Embedding)],
+                PromptEvalCount = llamaResp?.Usage?.PromptTokens,
+            }
+            : new OllamaEmbeddingsResponse
+            {
+                Model = ollamaReq.Model,
+                Embedding = llamaResp?.Data?.FirstOrDefault()?.Embedding ?? [],
+                PromptEvalCount = llamaResp?.Usage?.PromptTokens,
+            };
+
+        FillTokenStats(log, llamaResp?.Usage);
 
         log.Status = upstreamResp.IsSuccessStatusCode ? RequestStatus.Success : RequestStatus.Error;
         await WriteJsonAsync(resp, ollamaResp, ct);
@@ -1604,6 +1664,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         };
         byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(noticeChunk, _jsonOptions) + "\n");
         await resp.OutputStream.WriteAsync(bytes, ct);
+        await resp.OutputStream.FlushAsync(ct);
     }
 
     private static async Task StreamCompletionToOllamaAsync(
@@ -1621,6 +1682,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
         var responseAccumulator = collectResponse ? new StringBuilder() : null;
         bool reachedDone = false;
+        bool terminalChunkSent = false;
         long responseBytes = 0;
 
         while (!ct.IsCancellationRequested)
@@ -1636,6 +1698,8 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             if (line == "[DONE]")
             {
                 reachedDone = true;
+                if (terminalChunkSent) break;
+
                 var doneChunk = new OllamaGenerateResponse
                 {
                     Model = modelName,
@@ -1660,8 +1724,9 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
             FillTokenStats(log, chunk.Usage);
 
-            string token = chunk.Choices?.FirstOrDefault()?.Text ?? string.Empty;
-            bool done = chunk.Choices?.FirstOrDefault()?.FinishReason != null;
+            LlamaCppChoice? choice = chunk.Choices?.FirstOrDefault();
+            string token = choice?.Text ?? string.Empty;
+            bool done = choice?.FinishReason != null;
 
             responseAccumulator?.Append(token);
 
@@ -1670,7 +1735,12 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                 Model = modelName,
                 Response = token,
                 Done = done,
+                DoneReason = done ? choice?.FinishReason ?? "stop" : null,
+                PromptEvalCount = done && log.PromptTokens > 0 ? log.PromptTokens : null,
+                EvalCount = done && log.CompletionTokens > 0 ? log.CompletionTokens : null,
             };
+
+            if (done) terminalChunkSent = true;
 
             string chunkJson = JsonSerializer.Serialize(ollamaChunk, _jsonOptions);
             responseBytes += Encoding.UTF8.GetByteCount(chunkJson);
@@ -1765,7 +1835,10 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             AppendStreamingToolCalls(toolCallBuilders, delta?.ToolCalls);
             token = CaptureXmlToolCallToken(token, xmlToolCallBuilder, ref capturingXmlToolCall);
             bool done = choice?.FinishReason != null;
-            List<OllamaToolCall>? toolCalls = done && choice?.FinishReason == "tool_calls"
+            // Some OpenAI-compatible upstreams (notably llama.cpp) emit finish_reason="stop"
+            // even when tool_calls are present in the delta. Flush any accumulated tool_calls
+            // on the terminal chunk regardless of the reported finish_reason.
+            List<OllamaToolCall>? toolCalls = done && toolCallBuilders.Count > 0
                 ? BuildOllamaToolCalls(toolCallBuilders)
                 : null;
 
@@ -1839,28 +1912,50 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
     // ── Mapping helpers ──────────────────────────────────────────────────────
 
-    /// <summary>Converts Ollama format ("json" string or {"type":...} object) to OpenAI response_format.</summary>
+    /// <summary>
+    /// Converts Ollama's <c>format</c> field to an OpenAI <c>response_format</c> object.
+    /// Ollama accepts:
+    ///   • the literal string "json"  → OpenAI {"type":"json_object"}
+    ///   • a full JSON Schema object  → OpenAI {"type":"json_schema","json_schema":{...}}
+    ///   • an OpenAI-style object     → forwarded as-is
+    /// </summary>
     private static LlamaCppResponseFormat? ResolveResponseFormat(object? format)
     {
         if (format is null) return null;
+        if (format is not JsonElement je) return null;
 
-        if (format is JsonElement je)
+        if (je.ValueKind == JsonValueKind.String)
         {
-            if (je.ValueKind == JsonValueKind.String)
-            {
-                string? s = je.GetString();
-                return string.Equals(s, "json", StringComparison.OrdinalIgnoreCase)
-                    ? new LlamaCppResponseFormat { Type = "json_object" }
-                    : null;
-            }
-            if (je.ValueKind == JsonValueKind.Object)
-            {
-                string type = je.TryGetProperty("type", out JsonElement t) ? t.GetString() ?? "text" : "text";
-                return new LlamaCppResponseFormat { Type = type };
-            }
+            string? s = je.GetString();
+            return string.Equals(s, "json", StringComparison.OrdinalIgnoreCase)
+                ? new LlamaCppResponseFormat { Type = "json_object" }
+                : null;
+        }
+        if (je.ValueKind != JsonValueKind.Object)
+            return null;
+
+        // OpenAI-style passthrough.
+        if (je.TryGetProperty("type", out JsonElement t) && t.ValueKind == JsonValueKind.String)
+        {
+            string type = t.GetString() ?? "text";
+            object? schema = je.TryGetProperty("json_schema", out JsonElement js)
+                ? JsonSerializer.Deserialize<object>(js.GetRawText(), _jsonOptions)
+                : null;
+            return new LlamaCppResponseFormat { Type = type, JsonSchema = schema };
         }
 
-        return null;
+        // Ollama JSON-Schema (object with no "type"): wrap as OpenAI json_schema.
+        object? raw = JsonSerializer.Deserialize<object>(je.GetRawText(), _jsonOptions);
+        return new LlamaCppResponseFormat
+        {
+            Type = "json_schema",
+            JsonSchema = new Dictionary<string, object?>
+            {
+                ["name"] = "ollama_format",
+                ["strict"] = true,
+                ["schema"] = raw,
+            },
+        };
     }
 
     private static LlamaCppMessage MapMessage(OllamaMessage m) =>
@@ -1870,15 +1965,54 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             ToolCalls = m.ToolCalls is not null
                 ? [.. m.ToolCalls.Select(tc => new LlamaCppToolCall
                     {
-                        Id = Guid.NewGuid().ToString("N")[..8],
+                        Id = string.IsNullOrWhiteSpace(tc.Id) ? Guid.NewGuid().ToString("N")[..8] : tc.Id!,
                         Function = tc.Function is null ? null : new LlamaCppToolCallFunction
                         {
                             Name = tc.Function.Name,
-                            Arguments = tc.Function.Arguments?.ToString(),
+                            Arguments = tc.Function.Arguments switch
+                            {
+                                null => null,
+                                string s => s,
+                                _ => JsonSerializer.Serialize(tc.Function.Arguments, _jsonOptions),
+                            },
                         },
                     })]
                 : null,
         };
+
+    /// <summary>
+    /// Maps Ollama messages to OpenAI/llama.cpp messages and rewrites tool_call IDs so that:
+    ///   • each assistant tool_call gets a stable id (preserved if supplied, generated otherwise),
+    ///   • each following role:"tool" reply that lacks an id is correlated to the most recent
+    ///     unfulfilled assistant tool_call (by order, or by function name when available).
+    /// OpenAI-compatible upstreams reject tool replies whose tool_call_id doesn't match.
+    /// </summary>
+    private static List<LlamaCppMessage> MapMessagesWithToolCorrelation(List<OllamaMessage> source)
+    {
+        List<LlamaCppMessage> mapped = [.. source.Select(MapMessage)];
+        // Queue of (id, function name) per pending assistant tool_call.
+        Queue<(string Id, string? Name)> pending = new();
+
+        for (int i = 0; i < mapped.Count; i++)
+        {
+            LlamaCppMessage msg = mapped[i];
+
+            if (string.Equals(msg.Role, "assistant", StringComparison.OrdinalIgnoreCase)
+                && msg.ToolCalls is { Count: > 0 })
+            {
+                foreach (LlamaCppToolCall tc in msg.ToolCalls)
+                    pending.Enqueue((tc.Id, tc.Function?.Name));
+            }
+            else if (string.Equals(msg.Role, "tool", StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrWhiteSpace(msg.ToolCallId)
+                && pending.Count > 0)
+            {
+                msg.ToolCallId = pending.Dequeue().Id;
+            }
+        }
+
+        return mapped;
+    }
 
     private static List<LlamaCppTool>? MapTools(List<OllamaTool>? tools) =>
         tools is null ? null
@@ -1990,6 +2124,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             }
             return new OllamaToolCall
             {
+                Id = string.IsNullOrWhiteSpace(tc.Id) ? null : tc.Id,
                 Function = new OllamaToolCallFunction { Name = tc.Function?.Name ?? string.Empty, Arguments = args },
             };
         })];
@@ -2042,6 +2177,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
                 return new OllamaToolCall
                 {
+                    Id = string.IsNullOrWhiteSpace(pair.Value.Id) ? null : pair.Value.Id,
                     Function = new OllamaToolCallFunction
                     {
                         Name = pair.Value.Name,

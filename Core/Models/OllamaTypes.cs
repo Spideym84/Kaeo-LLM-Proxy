@@ -25,6 +25,9 @@ internal sealed class OllamaToolCallFunction
 
 internal sealed class OllamaToolCall
 {
+    /// <summary>Optional id returned by upstream so we can correlate the
+    /// subsequent role:"tool" reply back to its originating call.</summary>
+    [JsonPropertyName("id")] public string? Id { get; set; }
     [JsonPropertyName("function")] public OllamaToolCallFunction? Function { get; set; }
 }
 
@@ -115,8 +118,11 @@ internal sealed class OllamaModelEntry
 
 internal sealed class OllamaModelDetails
 {
+    [JsonPropertyName("parent_model")] public string ParentModel { get; set; } = string.Empty;
     [JsonPropertyName("format")] public string Format { get; set; } = "gguf";
     [JsonPropertyName("family")] public string Family { get; set; } = string.Empty;
+    /// <summary>Real Ollama clients read the families[] array as well as family.</summary>
+    [JsonPropertyName("families")] public List<string>? Families { get; set; }
     [JsonPropertyName("parameter_size")] public string ParameterSize { get; set; } = string.Empty;
     [JsonPropertyName("quantization_level")] public string QuantizationLevel { get; set; } = string.Empty;
 }
@@ -134,7 +140,8 @@ internal sealed class OllamaShowResponse
     [JsonPropertyName("model")] public string Model { get; set; } = string.Empty;
     [JsonPropertyName("modified_at")] public string ModifiedAt { get; set; } = DateTime.UtcNow.ToString("o");
     [JsonPropertyName("details")] public OllamaModelDetails? Details { get; set; }
-    [JsonPropertyName("modelinfo")] public Dictionary<string, object>? ModelInfo { get; set; }
+    /// <summary>Real Ollama uses snake_case "model_info"; clients depend on that name.</summary>
+    [JsonPropertyName("model_info")] public Dictionary<string, object>? ModelInfo { get; set; }
     [JsonPropertyName("capabilities")] public List<string>? Capabilities { get; set; }
 }
 
@@ -152,10 +159,13 @@ internal sealed class OllamaEmbeddingsRequest
 
 internal sealed class OllamaEmbeddingsResponse
 {
+    [JsonPropertyName("model")] public string? Model { get; set; }
     /// <summary>Single-vector legacy response.</summary>
     [JsonPropertyName("embedding")] public float[]? Embedding { get; set; }
     /// <summary>Multi-vector batch response.</summary>
     [JsonPropertyName("embeddings")] public List<float[]>? Embeddings { get; set; }
+    [JsonPropertyName("prompt_eval_count")] public int? PromptEvalCount { get; set; }
+    [JsonPropertyName("total_duration")] public long? TotalDuration { get; set; }
 }
 
 // ─────────────────────────── Options ──────────────────────────
@@ -170,6 +180,7 @@ internal sealed class OllamaOptions
     [JsonPropertyName("temperature")] public float? Temperature { get; set; }
     [JsonPropertyName("top_p")] public float? TopP { get; set; }
     [JsonPropertyName("top_k")] public int? TopK { get; set; }
+    [JsonPropertyName("min_p")] public float? MinP { get; set; }
     [JsonPropertyName("repeat_penalty")] public float? RepeatPenalty { get; set; }
     [JsonPropertyName("num_predict")] public int? NumPredict { get; set; }
     [JsonPropertyName("stop")] public List<string>? Stop { get; set; }
@@ -229,6 +240,8 @@ internal sealed class LlamaCppToolCall
 internal sealed class LlamaCppResponseFormat
 {
     [JsonPropertyName("type")] public string Type { get; set; } = "text";
+    /// <summary>Used when Type == "json_schema" to pass a strict OpenAI JSON-schema object.</summary>
+    [JsonPropertyName("json_schema")] public object? JsonSchema { get; set; }
 }
 
 /// <summary>OpenAI-compatible message used in requests to llama.cpp.</summary>
@@ -251,14 +264,23 @@ internal sealed class LlamaCppChatRequest
     [JsonPropertyName("messages")] public List<LlamaCppMessage> Messages { get; set; } = [];
     [JsonPropertyName("stream")] public bool Stream { get; set; } = true;
     [JsonPropertyName("tools")] public List<LlamaCppTool>? Tools { get; set; }
+    [JsonPropertyName("tool_choice")] public object? ToolChoice { get; set; }
     [JsonPropertyName("response_format")] public LlamaCppResponseFormat? ResponseFormat { get; set; }
     [JsonPropertyName("temperature")] public float? Temperature { get; set; }
     [JsonPropertyName("top_p")] public float? TopP { get; set; }
+    [JsonPropertyName("top_k")] public int? TopK { get; set; }
+    [JsonPropertyName("min_p")] public float? MinP { get; set; }
     [JsonPropertyName("max_tokens")] public int? MaxTokens { get; set; }
     [JsonPropertyName("stop")] public List<string>? Stop { get; set; }
     [JsonPropertyName("seed")] public int? Seed { get; set; }
     [JsonPropertyName("presence_penalty")] public float? PresencePenalty { get; set; }
     [JsonPropertyName("frequency_penalty")] public float? FrequencyPenalty { get; set; }
+    [JsonPropertyName("repeat_penalty")] public float? RepeatPenalty { get; set; }
+    [JsonPropertyName("mirostat")] public int? Mirostat { get; set; }
+    [JsonPropertyName("mirostat_tau")] public float? MirostatTau { get; set; }
+    [JsonPropertyName("mirostat_eta")] public float? MirostatEta { get; set; }
+    /// <summary>Forwarded to llama.cpp-compatible upstreams that accept it (mapped from num_ctx).</summary>
+    [JsonPropertyName("n_ctx")] public int? NCtx { get; set; }
 }
 
 internal sealed class LlamaCppCompletionRequest
@@ -269,9 +291,14 @@ internal sealed class LlamaCppCompletionRequest
     [JsonPropertyName("response_format")] public LlamaCppResponseFormat? ResponseFormat { get; set; }
     [JsonPropertyName("temperature")] public float? Temperature { get; set; }
     [JsonPropertyName("top_p")] public float? TopP { get; set; }
+    [JsonPropertyName("top_k")] public int? TopK { get; set; }
+    [JsonPropertyName("min_p")] public float? MinP { get; set; }
     [JsonPropertyName("max_tokens")] public int? MaxTokens { get; set; }
     [JsonPropertyName("stop")] public List<string>? Stop { get; set; }
     [JsonPropertyName("seed")] public int? Seed { get; set; }
+    [JsonPropertyName("presence_penalty")] public float? PresencePenalty { get; set; }
+    [JsonPropertyName("frequency_penalty")] public float? FrequencyPenalty { get; set; }
+    [JsonPropertyName("repeat_penalty")] public float? RepeatPenalty { get; set; }
 }
 
 internal sealed class LlamaCppStreamChunk
@@ -316,7 +343,9 @@ internal sealed class LlamaCppEmbeddingsRequest
 
 internal sealed class LlamaCppEmbeddingsResponse
 {
+    [JsonPropertyName("model")] public string? Model { get; set; }
     [JsonPropertyName("data")] public List<LlamaCppEmbeddingData> Data { get; set; } = [];
+    [JsonPropertyName("usage")] public LlamaCppUsage? Usage { get; set; }
 }
 
 internal sealed class LlamaCppEmbeddingData
