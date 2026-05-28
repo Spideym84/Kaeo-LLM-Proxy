@@ -162,10 +162,15 @@ internal sealed class StatisticsService : IDisposable
     {
         string key = string.IsNullOrWhiteSpace(modelName) ? "(unknown)" : modelName.Trim();
         HeartbeatStat stat = _heartbeats.GetOrAdd(key, _ => new HeartbeatStat());
+        Interlocked.Increment(ref stat.Attempts);
         Interlocked.Increment(ref stat.Count);
-        stat.LastSentUtcTicks = DateTime.UtcNow.Ticks;
+        long nowTicks = DateTime.UtcNow.Ticks;
+        Interlocked.Exchange(ref stat.LastAttemptUtcTicks, nowTicks);
+        Interlocked.Exchange(ref stat.LastSentUtcTicks, nowTicks);
+        Volatile.Write(ref stat.LastStatus, "Success");
+        Volatile.Write(ref stat.LastError, string.Empty);
         long count = Interlocked.Read(ref stat.Count);
-        DateTime lastSentUtc = new(Interlocked.Read(ref stat.LastSentUtcTicks), DateTimeKind.Utc);
+        DateTime lastSentUtc = new(nowTicks, DateTimeKind.Utc);
 
         if (_store is not null)
         {
@@ -176,6 +181,18 @@ internal sealed class StatisticsService : IDisposable
             });
         }
 
+        HeartbeatsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void RecordHeartbeatFailure(string? modelName, string errorMessage)
+    {
+        string key = string.IsNullOrWhiteSpace(modelName) ? "(unknown)" : modelName.Trim();
+        HeartbeatStat stat = _heartbeats.GetOrAdd(key, _ => new HeartbeatStat());
+        Interlocked.Increment(ref stat.Attempts);
+        Interlocked.Increment(ref stat.Failures);
+        Interlocked.Exchange(ref stat.LastAttemptUtcTicks, DateTime.UtcNow.Ticks);
+        Volatile.Write(ref stat.LastStatus, "Failed");
+        Volatile.Write(ref stat.LastError, string.IsNullOrWhiteSpace(errorMessage) ? "Unknown failure" : errorMessage.Trim());
         HeartbeatsChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -202,8 +219,13 @@ internal sealed class StatisticsService : IDisposable
     {
         return [.. _heartbeats.Select(kvp => new HeartbeatSnapshot(
             kvp.Key,
+            Interlocked.Read(ref kvp.Value.Attempts),
             Interlocked.Read(ref kvp.Value.Count),
-            new DateTime(Interlocked.Read(ref kvp.Value.LastSentUtcTicks), DateTimeKind.Utc)))];
+            Interlocked.Read(ref kvp.Value.Failures),
+            new DateTime(Interlocked.Read(ref kvp.Value.LastAttemptUtcTicks), DateTimeKind.Utc),
+            new DateTime(Interlocked.Read(ref kvp.Value.LastSentUtcTicks), DateTimeKind.Utc),
+            Volatile.Read(ref kvp.Value.LastStatus),
+            Volatile.Read(ref kvp.Value.LastError)))];
     }
 
     /// <summary>Clears all heartbeat counters.</summary>
@@ -254,9 +276,22 @@ internal sealed class StatisticsService : IDisposable
 /// <summary>Mutable counter holder used internally by <see cref="StatisticsService"/>.</summary>
 internal sealed class HeartbeatStat
 {
+    public long Attempts;
     public long Count;
+    public long Failures;
+    public long LastAttemptUtcTicks;
     public long LastSentUtcTicks;
+    public string LastStatus = "Not checked";
+    public string LastError = string.Empty;
 }
 
 /// <summary>Immutable snapshot of heartbeat activity for a single model.</summary>
-internal sealed record HeartbeatSnapshot(string Model, long Count, DateTime LastSentUtc);
+internal sealed record HeartbeatSnapshot(
+    string Model,
+    long Attempts,
+    long Count,
+    long Failures,
+    DateTime LastAttemptUtc,
+    DateTime LastSentUtc,
+    string LastStatus,
+    string LastError);

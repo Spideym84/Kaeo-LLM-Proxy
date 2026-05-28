@@ -7,6 +7,7 @@ namespace Kaeo.LlmProxy.Core.Models;
 internal enum UpstreamType
 {
     LlamaCpp,
+    OpenAI,
 }
 
 /// <summary>Named custom instruction set that can be injected into AI requests.</summary>
@@ -73,6 +74,12 @@ internal sealed class ModelMapping
 
     /// <summary>Upstream backend for this mapping. Only LlamaCpp is supported currently.</summary>
     public UpstreamType UpstreamType { get; set; } = UpstreamType.LlamaCpp;
+
+    /// <summary>
+    /// Optional bearer API key used when forwarding requests to OpenAI-compatible online services.
+    /// Leave empty for local upstreams that do not require authentication.
+    /// </summary>
+    public string? ApiKey { get; set; }
 
     /// <summary>
     /// Upstream base URL for this mapping (e.g. "http://192.168.1.10:8080"). Required.

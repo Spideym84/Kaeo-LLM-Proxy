@@ -4,16 +4,16 @@ namespace Kaeo.LlmProxy;
 
 internal sealed class InstructionSetDialog : Form
 {
-    private readonly TableLayoutPanel _tlpMain;
-    private readonly Label _lblName;
-    private readonly TextBox _txtName;
-    private readonly Label _lblDescription;
-    private readonly TextBox _txtDescription;
-    private readonly Label _lblInstructions;
-    private readonly TextBox _txtInstructions;
-    private readonly FlowLayoutPanel _flpButtons;
-    private readonly Button _btnOk;
-    private readonly Button _btnCancel;
+    private readonly TableLayoutPanel _tlpMain = new();
+    private readonly Label _lblName = new();
+    private readonly TextBox _txtName = new();
+    private readonly Label _lblDescription = new();
+    private readonly TextBox _txtDescription = new();
+    private readonly Label _lblInstructions = new();
+    private readonly TextBox _txtInstructions = new();
+    private readonly FlowLayoutPanel _flpButtons = new();
+    private readonly Button _btnOk = new();
+    private readonly Button _btnCancel = new();
 
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public string InstructionName
@@ -38,17 +38,6 @@ internal sealed class InstructionSetDialog : Form
 
     public InstructionSetDialog()
     {
-        _tlpMain = new TableLayoutPanel();
-        _lblName = new Label();
-        _txtName = new TextBox();
-        _lblDescription = new Label();
-        _txtDescription = new TextBox();
-        _lblInstructions = new Label();
-        _txtInstructions = new TextBox();
-        _flpButtons = new FlowLayoutPanel();
-        _btnOk = new Button();
-        _btnCancel = new Button();
-
         SuspendLayout();
 
         // _tlpMain

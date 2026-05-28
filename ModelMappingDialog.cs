@@ -27,6 +27,8 @@ internal sealed class ModelMappingDialog : Form
     private readonly TextBox _txtUpstreamUrl = new();
     private readonly Label _lblUpstreamType = new();
     private readonly ComboBox _cmbUpstreamType = new();
+    private readonly Label _lblApiKey = new();
+    private readonly TextBox _txtApiKey = new();
     private readonly Label _lblModelName = new();
     private readonly ComboBox _cmbModelName = new();
     private readonly Button _btnFetchModels = new();
@@ -180,7 +182,8 @@ internal sealed class ModelMappingDialog : Form
         _tlpMain.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         _tlpMain.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         _tlpMain.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        _tlpMain.RowCount = 14;
+        _tlpMain.RowCount = 15;
+        _tlpMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _tlpMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _tlpMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _tlpMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -210,38 +213,42 @@ internal sealed class ModelMappingDialog : Form
         _tlpMain.SetColumnSpan(_cmbUpstreamType, 2);
         _tlpMain.Controls.Add(_cmbUpstreamType, 1, 2);
 
-        _tlpMain.Controls.Add(_lblModelName, 0, 3);
-        _tlpMain.Controls.Add(_cmbModelName, 1, 3);
-        _tlpMain.Controls.Add(_btnFetchModels, 2, 3);
+        _tlpMain.Controls.Add(_lblApiKey, 0, 3);
+        _tlpMain.SetColumnSpan(_txtApiKey, 2);
+        _tlpMain.Controls.Add(_txtApiKey, 1, 3);
 
-        _tlpMain.Controls.Add(_lblInstructionSet, 0, 4);
+        _tlpMain.Controls.Add(_lblModelName, 0, 4);
+        _tlpMain.Controls.Add(_cmbModelName, 1, 4);
+        _tlpMain.Controls.Add(_btnFetchModels, 2, 4);
+
+        _tlpMain.Controls.Add(_lblInstructionSet, 0, 5);
         _tlpMain.SetColumnSpan(_cmbInstructionSet, 2);
-        _tlpMain.Controls.Add(_cmbInstructionSet, 1, 4);
+        _tlpMain.Controls.Add(_cmbInstructionSet, 1, 5);
 
-        _tlpMain.Controls.Add(_lblUpstreamTimeout, 0, 5);
+        _tlpMain.Controls.Add(_lblUpstreamTimeout, 0, 6);
         _tlpMain.SetColumnSpan(_txtUpstreamTimeout, 2);
-        _tlpMain.Controls.Add(_txtUpstreamTimeout, 1, 5);
+        _tlpMain.Controls.Add(_txtUpstreamTimeout, 1, 6);
 
-        _tlpMain.Controls.Add(_lblTemperature, 0, 6);
+        _tlpMain.Controls.Add(_lblTemperature, 0, 7);
         _tlpMain.SetColumnSpan(_nudTemperature, 2);
-        _tlpMain.Controls.Add(_nudTemperature, 1, 6);
+        _tlpMain.Controls.Add(_nudTemperature, 1, 7);
 
-        _tlpMain.Controls.Add(_lblRepeatPenalty, 0, 7);
+        _tlpMain.Controls.Add(_lblRepeatPenalty, 0, 8);
         _tlpMain.SetColumnSpan(_nudRepeatPenalty, 2);
-        _tlpMain.Controls.Add(_nudRepeatPenalty, 1, 7);
+        _tlpMain.Controls.Add(_nudRepeatPenalty, 1, 8);
 
         _tlpMain.SetColumnSpan(_chkEnableThinkingCompatibility, 3);
-        _tlpMain.Controls.Add(_chkEnableThinkingCompatibility, 0, 8);
+        _tlpMain.Controls.Add(_chkEnableThinkingCompatibility, 0, 9);
         _tlpMain.SetColumnSpan(_chkEnableHeartbeats, 3);
-        _tlpMain.Controls.Add(_chkEnableHeartbeats, 0, 9);
+        _tlpMain.Controls.Add(_chkEnableHeartbeats, 0, 10);
         _tlpMain.SetColumnSpan(_chkRedactRequestBodies, 3);
-        _tlpMain.Controls.Add(_chkRedactRequestBodies, 0, 10);
+        _tlpMain.Controls.Add(_chkRedactRequestBodies, 0, 11);
         _tlpMain.SetColumnSpan(_chkRedactResponseBodies, 3);
-        _tlpMain.Controls.Add(_chkRedactResponseBodies, 0, 11);
+        _tlpMain.Controls.Add(_chkRedactResponseBodies, 0, 12);
         _tlpMain.SetColumnSpan(_chkRedactSensitiveJsonFields, 3);
-        _tlpMain.Controls.Add(_chkRedactSensitiveJsonFields, 0, 12);
+        _tlpMain.Controls.Add(_chkRedactSensitiveJsonFields, 0, 13);
         _tlpMain.SetColumnSpan(_flpButtons, 3);
-        _tlpMain.Controls.Add(_flpButtons, 0, 13);
+        _tlpMain.Controls.Add(_flpButtons, 0, 14);
 
         _lblProxyName.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         _lblProxyName.AutoSize = true;
@@ -267,6 +274,16 @@ internal sealed class ModelMappingDialog : Form
         _cmbUpstreamType.Dock = DockStyle.Fill;
         _cmbUpstreamType.DropDownStyle = ComboBoxStyle.DropDownList;
         _cmbUpstreamType.Margin = new Padding(0, 4, 0, 4);
+
+        _lblApiKey.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _lblApiKey.AutoSize = true;
+        _lblApiKey.Margin = new Padding(0, 8, 8, 4);
+        _lblApiKey.Text = "API Key:";
+
+        _txtApiKey.Dock = DockStyle.Fill;
+        _txtApiKey.Margin = new Padding(0, 4, 0, 4);
+        _txtApiKey.PasswordChar = '●';
+        _txtApiKey.PlaceholderText = "Optional bearer token for online OpenAI-compatible services";
 
         _lblModelName.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         _lblModelName.AutoSize = true;
@@ -371,7 +388,7 @@ internal sealed class ModelMappingDialog : Form
         AutoScaleDimensions = new SizeF(7F, 15F);
         AutoScaleMode = AutoScaleMode.Font;
         CancelButton = _btnCancel;
-        ClientSize = new Size(560, 500);
+        ClientSize = new Size(600, 540);
         Controls.Add(_tlpMain);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -401,7 +418,7 @@ internal sealed class ModelMappingDialog : Form
 
         try
         {
-            List<string> models = await FetchUpstreamModelsAsync(_upstreamUrl);
+            List<string> models = await FetchUpstreamModelsAsync(_upstreamUrl, _txtApiKey.Text);
 
             if (models.Count == 0)
             {
@@ -431,7 +448,7 @@ internal sealed class ModelMappingDialog : Form
     /// <summary>
     /// Fetches the model list from the specified upstream URL and returns the ids, or an empty list on failure.
     /// </summary>
-    internal static async Task<List<string>> FetchUpstreamModelsAsync(string upstreamUrl)
+    internal static async Task<List<string>> FetchUpstreamModelsAsync(string upstreamUrl, string? apiKey = null)
     {
         try
         {
@@ -441,7 +458,11 @@ internal sealed class ModelMappingDialog : Form
                 Timeout = TimeSpan.FromSeconds(10),
             };
 
-            using HttpResponseMessage resp = await client.GetAsync("/v1/models");
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/v1/models");
+            if (!string.IsNullOrWhiteSpace(apiKey))
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey.Trim());
+
+            using HttpResponseMessage resp = await client.SendAsync(request);
 
             if (!resp.IsSuccessStatusCode)
                 return [];
@@ -492,6 +513,7 @@ internal sealed class ModelMappingDialog : Form
         dlg.PopulateUpstreamTypes(mapping.UpstreamType);
         dlg._txtProxyName.Text = mapping.ProxyName ?? string.Empty;
         dlg._txtUpstreamUrl.Text = mapping.UpstreamUrl ?? string.Empty;
+        dlg._txtApiKey.Text = mapping.ApiKey ?? string.Empty;
         dlg._upstreamUrl = mapping.UpstreamUrl ?? string.Empty;
         dlg.PopulateModelItems(existingModelItems, mapping.ModelName);
         dlg.InstructionSetName = mapping.InstructionSetName;
@@ -513,6 +535,9 @@ internal sealed class ModelMappingDialog : Form
 
         mapping.ProxyName = dlg._txtProxyName.Text.Trim();
         mapping.UpstreamUrl = dlg._txtUpstreamUrl.Text.Trim();
+        mapping.ApiKey = string.IsNullOrWhiteSpace(dlg._txtApiKey.Text)
+            ? null
+            : dlg._txtApiKey.Text.Trim();
         mapping.UpstreamType = dlg._cmbUpstreamType.SelectedItem is UpstreamType ut
             ? ut
             : UpstreamType.LlamaCpp;

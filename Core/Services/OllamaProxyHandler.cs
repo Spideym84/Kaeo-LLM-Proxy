@@ -79,7 +79,11 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                 continue;
             }
 
-            PeriodicHeartbeatState created = new(mapping, _settings.StreamingHeartbeatIntervalSeconds, SendPeriodicHeartbeatAsync);
+            PeriodicHeartbeatState created = new(
+                mapping,
+                _settings.StreamingHeartbeatIntervalSeconds,
+                SendPeriodicHeartbeatAsync,
+                RecordPeriodicHeartbeatFailure);
             if (!_periodicHeartbeats.TryAdd(key, created))
                 created.Dispose();
         }
@@ -103,7 +107,8 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         if (string.IsNullOrWhiteSpace(modelName))
             return;
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"/v1/models/{Uri.EscapeDataString(mapping.ModelName)}");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/v1/models");
+        ApplyApiKey(request, mapping.ApiKey);
         int timeout = mapping.UpstreamTimeoutSeconds > 0 ? mapping.UpstreamTimeoutSeconds : 300;
         using HttpResponseMessage response = await SendUpstreamAsync(
             request,
@@ -113,9 +118,21 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             ct);
 
         if (response.IsSuccessStatusCode)
+        {
             _stats.IncrementHeartbeat(modelName);
-        else
-            Log.Warning("Heartbeat probe for model {Model} returned HTTP {StatusCode}", modelName, (int)response.StatusCode);
+            return;
+        }
+
+        string error = $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}";
+        _stats.RecordHeartbeatFailure(modelName, error);
+        Log.Warning("Heartbeat probe for model {Model} returned {Error}", modelName, error);
+    }
+
+    private void RecordPeriodicHeartbeatFailure(ModelMapping mapping, string errorMessage)
+    {
+        string modelName = GetHeartbeatModelName(mapping);
+        if (!string.IsNullOrWhiteSpace(modelName))
+            _stats.RecordHeartbeatFailure(modelName, errorMessage);
     }
 
     private static string GetHeartbeatModelName(ModelMapping mapping)
@@ -128,12 +145,12 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
     }
 
     /// <summary>
-    /// Returns the (baseUrl, timeoutSeconds) to use for a given Ollama model name.
+    /// Returns the base URL, timeout, and optional bearer API key to use for a given Ollama model name.
     /// Requires each mapping to have its own upstream URL configured.
     /// If ollamaModel is null or empty and there's at least one mapping configured,
-    /// returns the first mapping's upstream URL as a fallback.
+    /// returns the first mapping's upstream settings as a fallback.
     /// </summary>
-    private (string BaseUrl, int TimeoutSeconds) ResolveUpstream(string ollamaModel)
+    private (string BaseUrl, int TimeoutSeconds, string? ApiKey) ResolveUpstream(string ollamaModel)
     {
         ModelMapping? mapping = _settings.FindModelMapping(ollamaModel);
         if (mapping is not null)
@@ -144,7 +161,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                     "Each mapping must specify its own UpstreamUrl.");
 
             int timeout = mapping.UpstreamTimeoutSeconds > 0 ? mapping.UpstreamTimeoutSeconds : 300;
-            return (mapping.UpstreamUrl.TrimEnd('/'), timeout);
+            return (mapping.UpstreamUrl.TrimEnd('/'), timeout, mapping.ApiKey);
         }
 
         // Fallback: if model name is empty/null and we have at least one mapping,
@@ -158,7 +175,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                     "Each mapping must specify its own UpstreamUrl.");
 
             int timeout = fallback.UpstreamTimeoutSeconds > 0 ? fallback.UpstreamTimeoutSeconds : 300;
-            return (fallback.UpstreamUrl.TrimEnd('/'), timeout);
+            return (fallback.UpstreamUrl.TrimEnd('/'), timeout, fallback.ApiKey);
         }
 
         throw new InvalidOperationException(
@@ -238,6 +255,12 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
         return await _httpClient.SendAsync(req, completionOption, cts.Token);
+    }
+
+    private static void ApplyApiKey(HttpRequestMessage request, string? apiKey)
+    {
+        if (!string.IsNullOrWhiteSpace(apiKey) && request.Headers.Authorization is null)
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey.Trim());
     }
 
     private static HttpClient BuildHttpClient(AppSettings _) =>
@@ -437,7 +460,8 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             }
         }
 
-        var (baseUrl, timeout) = ResolveUpstream(originalModel);
+        var (baseUrl, timeout, apiKey) = ResolveUpstream(originalModel);
+        ApplyApiKey(upstreamReq, apiKey);
         HttpResponseMessage upstreamResp = await SendUpstreamAsync(
             upstreamReq, baseUrl, timeout, HttpCompletionOption.ResponseHeadersRead, ct);
 
@@ -853,8 +877,9 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
     private async Task HandleTagsAsync(HttpListenerResponse resp, RequestLog log, CancellationToken ct)
     {
-        var (baseUrl, timeout) = ResolveUpstream(string.Empty);
+        var (baseUrl, timeout, apiKey) = ResolveUpstream(string.Empty);
         using var req = new HttpRequestMessage(HttpMethod.Get, "/v1/models");
+        ApplyApiKey(req, apiKey);
         HttpResponseMessage upstreamResp = await SendUpstreamAsync(req, baseUrl, timeout, HttpCompletionOption.ResponseContentRead, ct);
         log.StatusCode = (int)upstreamResp.StatusCode;
 
@@ -879,8 +904,9 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
     private async Task HandlePsAsync(HttpListenerResponse resp, RequestLog log, CancellationToken ct)
     {
-        var (baseUrl, timeout) = ResolveUpstream(string.Empty);
+        var (baseUrl, timeout, apiKey) = ResolveUpstream(string.Empty);
         using var psReq = new HttpRequestMessage(HttpMethod.Get, "/v1/models");
+        ApplyApiKey(psReq, apiKey);
         HttpResponseMessage upstreamResp = await SendUpstreamAsync(psReq, baseUrl, timeout, HttpCompletionOption.ResponseContentRead, ct);
         string body = await upstreamResp.Content.ReadAsStringAsync(ct);
         LlamaCppModelsResponse? models = JsonSerializer.Deserialize<LlamaCppModelsResponse>(body, _jsonOptions);
@@ -911,8 +937,9 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         if (_settings.CollectRequestDetails)
             log.RequestBody = RedactRequestBodyForLog(body, showReq?.Model ?? showReq?.Name ?? string.Empty);
 
-        var (showBase, showTimeout) = ResolveUpstream(showReq?.Model ?? showReq?.Name ?? string.Empty);
+        var (showBase, showTimeout, showApiKey) = ResolveUpstream(showReq?.Model ?? showReq?.Name ?? string.Empty);
         using var showReqMsg = new HttpRequestMessage(HttpMethod.Get, $"/v1/models/{Uri.EscapeDataString(modelName)}");
+        ApplyApiKey(showReqMsg, showApiKey);
         HttpResponseMessage upstreamResp = await SendUpstreamAsync(showReqMsg, showBase, showTimeout, HttpCompletionOption.ResponseContentRead, ct);
         log.StatusCode = (int)upstreamResp.StatusCode;
 
@@ -943,7 +970,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         if (_settings.CollectRequestDetails)
             log.RequestBody = RedactRequestBodyForLog(body, ollamaReq.Model);
         log.Streaming = ollamaReq.Stream;
-        var (genBase, genTimeout) = ResolveUpstream(ollamaReq.Model);
+        var (genBase, genTimeout, genApiKey) = ResolveUpstream(ollamaReq.Model);
 
         // Build the prompt, optionally injecting custom instructions
         string prompt = ollamaReq.Prompt;
@@ -981,8 +1008,10 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         };
 
         using StringContent genContent = new(JsonSerializer.Serialize(llamaReq, _jsonOptions), Encoding.UTF8, "application/json");
+        using var genReqMsg = new HttpRequestMessage(HttpMethod.Post, "/v1/completions") { Content = genContent };
+        ApplyApiKey(genReqMsg, genApiKey);
         using HttpResponseMessage upstreamResp = await SendUpstreamAsync(
-            new HttpRequestMessage(HttpMethod.Post, "/v1/completions") { Content = genContent },
+            genReqMsg,
             genBase, genTimeout, HttpCompletionOption.ResponseHeadersRead, ct);
 
         log.StatusCode = (int)upstreamResp.StatusCode;
@@ -1053,7 +1082,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         if (_settings.CollectRequestDetails)
             log.RequestBody = RedactRequestBodyForLog(body, ollamaReq.Model);
         log.Streaming = ollamaReq.Stream;
-        var (chatBase, chatTimeout) = ResolveUpstream(ollamaReq.Model);
+            var (chatBase, chatTimeout, chatApiKey) = ResolveUpstream(ollamaReq.Model);
 
         // Get model mapping for context management settings
         ModelMapping? mapping = _settings.FindModelMapping(ollamaReq.Model);
@@ -1106,8 +1135,10 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             };
 
             using StringContent chatContent = new(JsonSerializer.Serialize(llamaReq, _jsonOptions), Encoding.UTF8, "application/json");
+            using var chatReqMsg = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions") { Content = chatContent };
+            ApplyApiKey(chatReqMsg, chatApiKey);
             using HttpResponseMessage upstreamResp = await SendUpstreamAsync(
-                new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions") { Content = chatContent },
+                chatReqMsg,
                 chatBase, chatTimeout, HttpCompletionOption.ResponseHeadersRead, ct);
 
             log.StatusCode = (int)upstreamResp.StatusCode;
@@ -1129,6 +1160,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                         preserveRecentCount,
                         chatBase,
                         chatTimeout,
+                        chatApiKey,
                         resolvedModel,
                         ct);
 
@@ -1267,7 +1299,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         log.Model = resolvedModel;
         if (_settings.CollectRequestDetails)
             log.RequestBody = RedactRequestBodyForLog(body, ollamaReq.Model);
-        var (embedBase, embedTimeout) = ResolveUpstream(ollamaReq.Model);
+        var (embedBase, embedTimeout, embedApiKey) = ResolveUpstream(ollamaReq.Model);
 
         // Resolve input: prefer new `input` (string or string[]), fall back to legacy `prompt`.
         object resolvedInput = ResolveEmbeddingInput(ollamaReq);
@@ -1277,6 +1309,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
         using StringContent embedContent = new(JsonSerializer.Serialize(llamaReq, _jsonOptions), Encoding.UTF8, "application/json");
         using var embedReqMsg = new HttpRequestMessage(HttpMethod.Post, "/v1/embeddings") { Content = embedContent };
+        ApplyApiKey(embedReqMsg, embedApiKey);
         HttpResponseMessage upstreamResp = await SendUpstreamAsync(embedReqMsg, embedBase, embedTimeout, HttpCompletionOption.ResponseContentRead, ct);
         log.StatusCode = (int)upstreamResp.StatusCode;
 
@@ -1630,6 +1663,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         int preserveRecentCount,
         string baseUrl,
         int timeoutSeconds,
+        string? apiKey,
         string modelName,
         CancellationToken ct)
     {
@@ -1697,8 +1731,10 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                 Encoding.UTF8, 
                 "application/json");
 
+            using var summaryReqMsg = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions") { Content = summaryContent };
+            ApplyApiKey(summaryReqMsg, apiKey);
             using HttpResponseMessage summaryResp = await SendUpstreamAsync(
-                new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions") { Content = summaryContent },
+                summaryReqMsg,
                 baseUrl, 
                 timeoutSeconds, 
                 HttpCompletionOption.ResponseHeadersRead, 
@@ -1862,6 +1898,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
     private sealed class PeriodicHeartbeatState : IDisposable
     {
         private readonly Func<ModelMapping, CancellationToken, Task> _sendHeartbeatAsync;
+        private readonly Action<ModelMapping, string> _recordFailure;
         private readonly CancellationTokenSource _cts = new();
         private readonly SemaphoreSlim _sendLock = new(1, 1);
         private System.Threading.Timer _timer;
@@ -1870,10 +1907,12 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         public PeriodicHeartbeatState(
             ModelMapping mapping,
             int intervalSeconds,
-            Func<ModelMapping, CancellationToken, Task> sendHeartbeatAsync)
+            Func<ModelMapping, CancellationToken, Task> sendHeartbeatAsync,
+            Action<ModelMapping, string> recordFailure)
         {
             _mapping = CloneMapping(mapping);
             _sendHeartbeatAsync = sendHeartbeatAsync;
+            _recordFailure = recordFailure;
             TimeSpan interval = GetInterval(intervalSeconds);
             _timer = new System.Threading.Timer(OnTimer, null, TimeSpan.Zero, interval);
         }
@@ -1914,6 +1953,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             }
             catch (Exception ex)
             {
+                _recordFailure(_mapping, ex.Message);
                 Log.Warning(ex, "Periodic heartbeat failed for model {Model}", _mapping.ProxyName);
             }
             finally
@@ -1939,6 +1979,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             ModelName = mapping.ModelName,
             EnableThinkingCompatibility = mapping.EnableThinkingCompatibility,
             EnableHeartbeats = mapping.EnableHeartbeats,
+            ApiKey = mapping.ApiKey,
             UpstreamType = mapping.UpstreamType,
             UpstreamUrl = mapping.UpstreamUrl,
             UpstreamTimeoutSeconds = mapping.UpstreamTimeoutSeconds,

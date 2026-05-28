@@ -493,15 +493,25 @@ internal partial class MainForm : Form
             rows.Add(new HeartbeatDisplayRow(
                 modelName,
                 mapping.EnableHeartbeats && _settings.EnableStreamingHeartbeats,
+                snapshot?.Attempts ?? 0,
                 snapshot?.Count ?? 0,
-                snapshot?.LastSentUtc ?? default));
+                snapshot?.Failures ?? 0,
+                snapshot?.LastAttemptUtc ?? default,
+                snapshot?.LastSentUtc ?? default,
+                snapshot?.LastStatus ?? "Not checked",
+                snapshot?.LastError ?? string.Empty));
         }
 
         rows.AddRange(snapshots.Values.Select(s => new HeartbeatDisplayRow(
             s.Model,
-            Enabled: true,
+            true,
+            s.Attempts,
             s.Count,
-            s.LastSentUtc)));
+            s.Failures,
+            s.LastAttemptUtc,
+            s.LastSentUtc,
+            s.LastStatus,
+            s.LastError)));
 
         _lstHeartbeats.BeginUpdate();
         _lstHeartbeats.Items.Clear();
@@ -512,11 +522,23 @@ internal partial class MainForm : Form
         {
             ListViewItem item = new(row.Model);
             item.SubItems.Add(row.Enabled ? "Yes" : "No");
+            item.SubItems.Add(row.LastStatus);
+            item.SubItems.Add(row.Attempts.ToString("N0"));
             item.SubItems.Add(row.Count.ToString("N0"));
+            item.SubItems.Add(row.Failures.ToString("N0"));
+            item.SubItems.Add(row.LastAttemptUtc == default
+                ? "—"
+                : row.LastAttemptUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"));
             item.SubItems.Add(row.LastSentUtc == default
                 ? "—"
                 : row.LastSentUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"));
-            item.ForeColor = row.Enabled ? SystemColors.WindowText : SystemColors.GrayText;
+            item.SubItems.Add(string.IsNullOrWhiteSpace(row.LastError) ? "—" : row.LastError);
+            if (!row.Enabled)
+                item.ForeColor = SystemColors.GrayText;
+            else if (row.Failures > 0 && row.Count == 0)
+                item.ForeColor = Color.Firebrick;
+            else
+                item.ForeColor = SystemColors.WindowText;
             _lstHeartbeats.Items.Add(item);
         }
 
@@ -550,11 +572,40 @@ internal partial class MainForm : Form
         RefreshHeartbeats();
     }
 
-    private readonly record struct HeartbeatDisplayRow(
-        string Model,
-        bool Enabled,
-        long Count,
-        DateTime LastSentUtc);
+    private readonly struct HeartbeatDisplayRow
+    {
+        public HeartbeatDisplayRow(
+            string model,
+            bool enabled,
+            long attempts,
+            long count,
+            long failures,
+            DateTime lastAttemptUtc,
+            DateTime lastSentUtc,
+            string lastStatus,
+            string lastError)
+        {
+            Model = model;
+            Enabled = enabled;
+            Attempts = attempts;
+            Count = count;
+            Failures = failures;
+            LastAttemptUtc = lastAttemptUtc;
+            LastSentUtc = lastSentUtc;
+            LastStatus = lastStatus;
+            LastError = lastError;
+        }
+
+        public readonly string Model;
+        public readonly bool Enabled;
+        public readonly long Attempts;
+        public readonly long Count;
+        public readonly long Failures;
+        public readonly DateTime LastAttemptUtc;
+        public readonly DateTime LastSentUtc;
+        public readonly string LastStatus;
+        public readonly string LastError;
+    }
 
     private void CmbRefreshInterval_SelectedIndexChanged(object? sender, EventArgs e)
     {
@@ -602,6 +653,7 @@ internal partial class MainForm : Form
                 ModelName = mapping.ModelName,
                 EnableThinkingCompatibility = mapping.EnableThinkingCompatibility,
                 EnableHeartbeats = mapping.EnableHeartbeats,
+                ApiKey = mapping.ApiKey,
                 UpstreamUrl = mapping.UpstreamUrl,
                 UpstreamTimeoutSeconds = mapping.UpstreamTimeoutSeconds,
                 RepeatPenalty = mapping.RepeatPenalty,
@@ -765,6 +817,7 @@ internal partial class MainForm : Form
                     ModelName              = modelName.Trim(),
                     EnableThinkingCompatibility = advanced?.EnableThinkingCompatibility ?? true,
                     EnableHeartbeats       = advanced?.EnableHeartbeats ?? true,
+                    ApiKey                 = advanced?.ApiKey,
                     UpstreamUrl            = upstreamUrl.Trim(),
                     UpstreamTimeoutSeconds = advanced?.UpstreamTimeoutSeconds ?? 300,
                     RepeatPenalty          = advanced?.RepeatPenalty ?? 1.0,
@@ -967,7 +1020,7 @@ internal partial class MainForm : Form
         }
     }
 
-    private void RefreshInstructionDropdowns()
+    private static void RefreshInstructionDropdowns()
     {
         // Instruction set selection has moved to the modal ModelMappingDialog,
         // which populates its own combo from _settings.InstructionSets each time
@@ -1429,7 +1482,7 @@ internal partial class MainForm : Form
     private void HandleTestConsoleException(Exception ex)
     {
         if (System.Diagnostics.Debugger.IsAttached)
-            System.Diagnostics.Debugger.Break();
+            System.Diagnostics.Debugger.BreakForUserUnhandledException(ex);
 
         System.Diagnostics.Debug.WriteLine($"[TestConsole] {ex}");
 
@@ -1476,6 +1529,8 @@ internal partial class MainForm : Form
             Content = new StringContent(requestBodyJson, Encoding.UTF8, "application/json"),
         };
         reqMsg.Headers.Accept.ParseAdd("text/event-stream");
+        if (!string.IsNullOrWhiteSpace(mapping?.ApiKey))
+            reqMsg.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", mapping.ApiKey.Trim());
 
         // Overall request-level timeout so a stalled upstream cannot hang the UI forever.
         using var requestCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -1608,7 +1663,12 @@ internal partial class MainForm : Form
                     JsonElement root = parsed.RootElement;
 
                     if (TryExtractSseError(root, out string errorMessage))
-                        throw new InvalidOperationException($"Upstream stream error: {errorMessage}");
+                    {
+                        yield return new TestConsoleToken(
+                            $"[Upstream stream error]\r\n{errorMessage}",
+                            IsThinking: false);
+                        yield break;
+                    }
 
                     if (!root.TryGetProperty("choices", out JsonElement choices))
                     {

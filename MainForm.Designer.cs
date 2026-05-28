@@ -162,8 +162,13 @@ partial class MainForm
         _lstHeartbeats = new ListView();
         _colHbModel = new ColumnHeader();
         _colHbEnabled = new ColumnHeader();
+        _colHbStatus = new ColumnHeader();
+        _colHbAttempts = new ColumnHeader();
         _colHbCount = new ColumnHeader();
+        _colHbFailures = new ColumnHeader();
+        _colHbLastAttempt = new ColumnHeader();
         _colHbLast = new ColumnHeader();
+        _colHbLastError = new ColumnHeader();
         _flpHeartbeatButtons = new FlowLayoutPanel();
         _btnResetHeartbeats = new Button();
         _btnSaveHeartbeats = new Button();
@@ -1145,8 +1150,13 @@ partial class MainForm
 
         _lstHeartbeats.Columns.Add(_colHbModel);
         _lstHeartbeats.Columns.Add(_colHbEnabled);
+        _lstHeartbeats.Columns.Add(_colHbStatus);
+        _lstHeartbeats.Columns.Add(_colHbAttempts);
         _lstHeartbeats.Columns.Add(_colHbCount);
+        _lstHeartbeats.Columns.Add(_colHbFailures);
+        _lstHeartbeats.Columns.Add(_colHbLastAttempt);
         _lstHeartbeats.Columns.Add(_colHbLast);
+        _lstHeartbeats.Columns.Add(_colHbLastError);
         _lstHeartbeats.Dock = DockStyle.Fill;
         _lstHeartbeats.FullRowSelect = true;
         _lstHeartbeats.GridLines = true;
@@ -1159,10 +1169,20 @@ partial class MainForm
         _colHbModel.Width = 220;
         _colHbEnabled.Text = "Enabled";
         _colHbEnabled.Width = 80;
+        _colHbStatus.Text = "Last Status";
+        _colHbStatus.Width = 100;
+        _colHbAttempts.Text = "Attempts";
+        _colHbAttempts.Width = 80;
         _colHbCount.Text = "Heartbeats Sent";
         _colHbCount.Width = 130;
+        _colHbFailures.Text = "Failures";
+        _colHbFailures.Width = 80;
+        _colHbLastAttempt.Text = "Last Attempt";
+        _colHbLastAttempt.Width = 160;
         _colHbLast.Text = "Last Sent";
-        _colHbLast.Width = 180;
+        _colHbLast.Width = 160;
+        _colHbLastError.Text = "Last Error";
+        _colHbLastError.Width = 260;
 
         _flpHeartbeatButtons.AutoSize = true;
         _flpHeartbeatButtons.AutoSizeMode = AutoSizeMode.GrowAndShrink;
@@ -1375,8 +1395,13 @@ partial class MainForm
     private ListView _lstHeartbeats;
     private ColumnHeader _colHbModel;
     private ColumnHeader _colHbEnabled;
+    private ColumnHeader _colHbStatus;
+    private ColumnHeader _colHbAttempts;
     private ColumnHeader _colHbCount;
+    private ColumnHeader _colHbFailures;
+    private ColumnHeader _colHbLastAttempt;
     private ColumnHeader _colHbLast;
+    private ColumnHeader _colHbLastError;
     private FlowLayoutPanel _flpHeartbeatButtons;
     private Button _btnResetHeartbeats;
     private Button _btnSaveHeartbeats;
