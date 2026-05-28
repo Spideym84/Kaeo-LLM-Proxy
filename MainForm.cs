@@ -639,7 +639,7 @@ internal partial class MainForm : Form
         {
             int idx = _dgvMappings.Rows.Add(
                 mapping.ProxyName,
-                string.Empty,
+                mapping.ModelName,
                 mapping.UpstreamUrl,
                 mapping.UpstreamType.ToString());
 
@@ -668,14 +668,6 @@ internal partial class MainForm : Form
                 RedactSensitiveJsonFields = mapping.RedactSensitiveJsonFields,
             };
 
-            // The combo cell needs the item to exist before we can set a value.
-            DataGridViewComboBoxCell cell =
-                (DataGridViewComboBoxCell)row.Cells[_colModelName.Name];
-
-            if (!cell.Items.Contains(mapping.ModelName))
-                cell.Items.Add(mapping.ModelName);
-
-            cell.Value = mapping.ModelName;
         }
 
         // Load instructions list
@@ -874,28 +866,17 @@ internal partial class MainForm : Form
         // configure it, and only add a grid row on OK.
         ModelMapping mapping = new();
 
-        if (!ModelMappingDialog.ShowConfigureDialog(this, mapping, _settings.InstructionSets, [], out List<string> updatedModelItems))
+        if (!ModelMappingDialog.ShowConfigureDialog(this, mapping, _settings.InstructionSets, [], out _))
             return;
 
         int idx = _dgvMappings.Rows.Add(
             mapping.ProxyName,
-            string.Empty,
+            mapping.ModelName,
             mapping.UpstreamUrl,
             mapping.UpstreamType.ToString());
 
         DataGridViewRow row = _dgvMappings.Rows[idx];
         row.Tag = mapping;
-
-        DataGridViewComboBoxCell modelCell = (DataGridViewComboBoxCell)row.Cells[_colModelName.Name];
-        if (updatedModelItems.Count > 0)
-            modelCell.Items.AddRange([.. updatedModelItems.Cast<object>()]);
-
-        if (!string.IsNullOrWhiteSpace(mapping.ModelName))
-        {
-            if (!modelCell.Items.Contains(mapping.ModelName))
-                modelCell.Items.Add(mapping.ModelName);
-            modelCell.Value = mapping.ModelName;
-        }
 
         _dgvMappings.ClearSelection();
         row.Selected = true;
@@ -936,33 +917,18 @@ internal partial class MainForm : Form
         mapping.UpstreamUrl = row.Cells[_colUpstreamUrl.Name].Value?.ToString() ?? string.Empty;
         mapping.ModelName = row.Cells[_colModelName.Name].Value?.ToString() ?? string.Empty;
 
-        DataGridViewComboBoxCell modelCell = (DataGridViewComboBoxCell)row.Cells[_colModelName.Name];
-        List<string> existingItems = [.. modelCell.Items.Cast<object>().Select(o => o?.ToString() ?? string.Empty)];
+        List<string> existingItems = string.IsNullOrWhiteSpace(mapping.ModelName)
+            ? []
+            : [mapping.ModelName];
 
-        if (ModelMappingDialog.ShowConfigureDialog(this, mapping, _settings.InstructionSets, existingItems, out List<string> updatedModelItems))
+        if (ModelMappingDialog.ShowConfigureDialog(this, mapping, _settings.InstructionSets, existingItems, out _))
         {
             // Write user-edited values back into the grid cells. The grid is read-only;
             // these values come exclusively from the modal.
             row.Cells[_colProxyName.Name].Value = mapping.ProxyName;
+            row.Cells[_colModelName.Name].Value = mapping.ModelName;
             row.Cells[_colUpstreamUrl.Name].Value = mapping.UpstreamUrl;
             row.Cells[_colUpstreamType.Name].Value = mapping.UpstreamType.ToString();
-
-            // Sync the dialog's model list and selected model back into the grid cell.
-            modelCell.Items.Clear();
-            if (updatedModelItems.Count > 0)
-                modelCell.Items.AddRange([.. updatedModelItems.Cast<object>()]);
-
-            if (!string.IsNullOrWhiteSpace(mapping.ModelName))
-            {
-                if (!modelCell.Items.Contains(mapping.ModelName))
-                    modelCell.Items.Add(mapping.ModelName);
-
-                modelCell.Value = mapping.ModelName;
-            }
-            else
-            {
-                modelCell.Value = null;
-            }
         }
     }
 

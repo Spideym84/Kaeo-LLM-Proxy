@@ -91,9 +91,9 @@ partial class MainForm
         _lblMappings = new Label();
         _dgvMappings = new DataGridView();
         _colProxyName = new DataGridViewTextBoxColumn();
-        _colModelName = new DataGridViewComboBoxColumn();
+        _colModelName = new DataGridViewTextBoxColumn();
         _colUpstreamUrl = new DataGridViewTextBoxColumn();
-        _colUpstreamType = new DataGridViewComboBoxColumn();
+        _colUpstreamType = new DataGridViewTextBoxColumn();
         _btnSaveSettings = new Button();
         _flpMappingButtons = new FlowLayoutPanel();
         _btnAddMapping = new Button();
@@ -695,8 +695,6 @@ partial class MainForm
         _colProxyName.HeaderText = "Proxy Name";
         _colProxyName.Name = "_colProxyName";
 
-        _colModelName.DisplayStyleForCurrentCellOnly = true;
-        _colModelName.FlatStyle = FlatStyle.Flat;
         _colModelName.HeaderText = "Model Name";
         _colModelName.Name = "_colModelName";
         _colModelName.FillWeight = 120;
@@ -706,9 +704,7 @@ partial class MainForm
         _colUpstreamUrl.FillWeight = 160;
         _colUpstreamUrl.DefaultCellStyle.NullValue = string.Empty;
 
-        _colUpstreamType.FlatStyle = FlatStyle.Flat;
         _colUpstreamType.HeaderText = "Upstream";
-        _colUpstreamType.Items.AddRange(new object[] { "LlamaCpp" });
         _colUpstreamType.Name = "_colUpstreamType";
         _colUpstreamType.Width = 110;
         _colUpstreamType.FillWeight = 60;
@@ -1321,9 +1317,9 @@ partial class MainForm
     private Label _lblMappings;
     private DataGridView _dgvMappings;
     private DataGridViewTextBoxColumn _colProxyName;
-    private DataGridViewComboBoxColumn _colModelName;
+    private DataGridViewTextBoxColumn _colModelName;
     private DataGridViewTextBoxColumn _colUpstreamUrl;
-    private DataGridViewComboBoxColumn _colUpstreamType;
+    private DataGridViewTextBoxColumn _colUpstreamType;
     private FlowLayoutPanel _flpMappingButtons;
     private Button _btnAddMapping;
     private Button _btnRemoveMapping;
