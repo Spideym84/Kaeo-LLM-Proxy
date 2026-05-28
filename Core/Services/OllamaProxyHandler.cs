@@ -1497,6 +1497,12 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                 if (string.IsNullOrEmpty(content) && !string.IsNullOrEmpty(delta?.ReasoningContent))
                     content = delta.ReasoningContent;
 
+                ToolCallExtraction toolCallExtraction = ExtractXmlToolCalls(content);
+                if (toolCalls is null)
+                    toolCalls = toolCallExtraction.ToolCalls;
+
+                content = toolCallExtraction.Content;
+
                 // Prepend a brief notice to the content so the calling AI sees it
                 // in its own context window.
                 if (retryCount > 0)
@@ -1704,6 +1710,8 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         long responseBytes = 0;
         TimeSpan heartbeatInterval = TimeSpan.FromSeconds(Math.Clamp(heartbeatIntervalSeconds, 5, 300));
         Dictionary<int, StreamingToolCallBuilder> toolCallBuilders = [];
+        StringBuilder xmlToolCallBuilder = new();
+        bool capturingXmlToolCall = false;
 
         while (!ct.IsCancellationRequested)
         {
@@ -1755,10 +1763,17 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             LlamaCppDelta? delta = choice?.Delta;
             string token = delta?.Content ?? delta?.ReasoningContent ?? string.Empty;
             AppendStreamingToolCalls(toolCallBuilders, delta?.ToolCalls);
+            token = CaptureXmlToolCallToken(token, xmlToolCallBuilder, ref capturingXmlToolCall);
             bool done = choice?.FinishReason != null;
             List<OllamaToolCall>? toolCalls = done && choice?.FinishReason == "tool_calls"
                 ? BuildOllamaToolCalls(toolCallBuilders)
                 : null;
+
+            if (done && toolCalls is null)
+                toolCalls = ExtractXmlToolCalls(xmlToolCallBuilder.ToString()).ToolCalls;
+
+            if (done && toolCalls is not null)
+                token = string.Empty;
 
             responseAccumulator?.Append(token);
 
@@ -1767,7 +1782,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                 Model = modelName,
                 Message = new OllamaMessage("assistant", token) { ToolCalls = toolCalls },
                 Done = done,
-                DoneReason = done ? choice?.FinishReason ?? "stop" : null,
+                DoneReason = done ? toolCalls is not null ? "tool_calls" : choice?.FinishReason ?? "stop" : null,
             };
 
             if (done)
@@ -1878,6 +1893,90 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                 },
             })];
 
+    private static string CaptureXmlToolCallToken(string token, StringBuilder toolCallBuilder, ref bool isCapturing)
+    {
+        if (string.IsNullOrEmpty(token))
+            return token;
+
+        if (isCapturing)
+        {
+            toolCallBuilder.Append(token);
+            if (toolCallBuilder.ToString().Contains("</tool_call>", StringComparison.OrdinalIgnoreCase))
+                isCapturing = false;
+
+            return string.Empty;
+        }
+
+        int startIndex = token.IndexOf("<tool_call>", StringComparison.OrdinalIgnoreCase);
+        if (startIndex < 0)
+            return token;
+
+        string visibleContent = token[..startIndex];
+        toolCallBuilder.Append(token[startIndex..]);
+        if (!toolCallBuilder.ToString().Contains("</tool_call>", StringComparison.OrdinalIgnoreCase))
+            isCapturing = true;
+
+        return visibleContent;
+    }
+
+    private static ToolCallExtraction ExtractXmlToolCalls(string? content)
+    {
+        if (string.IsNullOrEmpty(content))
+            return new(content, null);
+
+        MatchCollection matches = Regex.Matches(
+            content,
+            @"<tool_call>\s*<function=(?<name>[^>\s]+)>\s*(?<body>.*?)\s*</function>\s*</tool_call>",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+        if (matches.Count == 0)
+            return new(content, null);
+
+        List<OllamaToolCall> toolCalls = [];
+        foreach (Match match in matches)
+        {
+            string name = match.Groups["name"].Value.Trim();
+            string body = match.Groups["body"].Value;
+            Dictionary<string, object?> arguments = new(StringComparer.OrdinalIgnoreCase);
+
+            foreach (Match parameterMatch in Regex.Matches(
+                body,
+                @"<parameter=(?<name>[^>\s]+)>\s*(?<value>.*?)\s*</parameter>",
+                RegexOptions.IgnoreCase | RegexOptions.Singleline))
+            {
+                string parameterName = parameterMatch.Groups["name"].Value.Trim();
+                string parameterValue = parameterMatch.Groups["value"].Value.Trim();
+                arguments[parameterName] = ParseXmlToolParameterValue(parameterValue);
+            }
+
+            toolCalls.Add(new OllamaToolCall
+            {
+                Function = new OllamaToolCallFunction
+                {
+                    Name = name,
+                    Arguments = arguments,
+                },
+            });
+        }
+
+        string strippedContent = matches.Aggregate(content, static (current, match) => current.Replace(match.Value, string.Empty)).Trim();
+        return new(strippedContent, toolCalls);
+    }
+
+    private static object? ParseXmlToolParameterValue(string value)
+    {
+        if (bool.TryParse(value, out bool booleanValue))
+            return booleanValue;
+
+        if (int.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int integerValue))
+            return integerValue;
+
+        if (double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double doubleValue))
+            return doubleValue;
+
+        return value;
+    }
+
     private static List<OllamaToolCall>? MapToolCallsToOllama(List<LlamaCppToolCall>? toolCalls)
     {
         if (toolCalls is null || toolCalls.Count == 0) return null;
@@ -1960,6 +2059,8 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
         public StringBuilder Arguments { get; } = new();
     }
+
+    private sealed record ToolCallExtraction(string? Content, List<OllamaToolCall>? ToolCalls);
 
     private static object ResolveEmbeddingInput(OllamaEmbeddingsRequest req)
     {
