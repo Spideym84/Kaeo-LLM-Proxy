@@ -220,6 +220,7 @@ internal sealed class LlamaCppToolCallFunction
 
 internal sealed class LlamaCppToolCall
 {
+    [JsonPropertyName("index")] public int? Index { get; set; }
     [JsonPropertyName("id")] public string Id { get; set; } = string.Empty;
     [JsonPropertyName("type")] public string Type { get; set; } = "function";
     [JsonPropertyName("function")] public LlamaCppToolCallFunction? Function { get; set; }
@@ -295,6 +296,7 @@ internal sealed class LlamaCppDelta
 {
     [JsonPropertyName("role")] public string? Role { get; set; }
     [JsonPropertyName("content")] public string? Content { get; set; }
+    [JsonPropertyName("reasoning_content")] public string? ReasoningContent { get; set; }
     [JsonPropertyName("tool_calls")] public List<LlamaCppToolCall>? ToolCalls { get; set; }
 }
 

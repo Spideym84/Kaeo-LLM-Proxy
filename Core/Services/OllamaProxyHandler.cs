@@ -1573,8 +1573,10 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
         var responseAccumulator = collectResponse ? new StringBuilder() : null;
         bool reachedDone = false;
+        bool terminalChunkSent = false;
         long responseBytes = 0;
         TimeSpan heartbeatInterval = TimeSpan.FromSeconds(Math.Clamp(heartbeatIntervalSeconds, 5, 300));
+        Dictionary<int, StreamingToolCallBuilder> toolCallBuilders = [];
 
         while (!ct.IsCancellationRequested)
         {
@@ -1595,6 +1597,9 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             if (line == "[DONE]")
             {
                 reachedDone = true;
+                if (terminalChunkSent)
+                    break;
+
                 var doneChunk = new OllamaChatResponse
                 {
                     Model = modelName,
@@ -1619,10 +1624,14 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
             FillTokenStats(log, chunk.Usage);
 
-            LlamaCppDelta? delta = chunk.Choices?.FirstOrDefault()?.Delta;
-            string token = delta?.Content ?? string.Empty;
-            List<OllamaToolCall>? toolCalls = MapToolCallsToOllama(delta?.ToolCalls);
-            bool done = chunk.Choices?.FirstOrDefault()?.FinishReason != null;
+            LlamaCppChoice? choice = chunk.Choices?.FirstOrDefault();
+            LlamaCppDelta? delta = choice?.Delta;
+            string token = delta?.Content ?? delta?.ReasoningContent ?? string.Empty;
+            AppendStreamingToolCalls(toolCallBuilders, delta?.ToolCalls);
+            bool done = choice?.FinishReason != null;
+            List<OllamaToolCall>? toolCalls = done && choice?.FinishReason == "tool_calls"
+                ? BuildOllamaToolCalls(toolCallBuilders)
+                : null;
 
             responseAccumulator?.Append(token);
 
@@ -1631,8 +1640,11 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                 Model = modelName,
                 Message = new OllamaMessage("assistant", token) { ToolCalls = toolCalls },
                 Done = done,
-                DoneReason = done ? (toolCalls?.Count > 0 ? "tool_calls" : "stop") : null,
+                DoneReason = done ? choice?.FinishReason ?? "stop" : null,
             };
+
+            if (done)
+                terminalChunkSent = true;
 
             string chunkJson = JsonSerializer.Serialize(ollamaChunk, _jsonOptions);
             responseBytes += Encoding.UTF8.GetByteCount(chunkJson);
@@ -1755,6 +1767,71 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                 Function = new OllamaToolCallFunction { Name = tc.Function?.Name ?? string.Empty, Arguments = args },
             };
         })];
+    }
+
+    private static void AppendStreamingToolCalls(
+        Dictionary<int, StreamingToolCallBuilder> builders,
+        List<LlamaCppToolCall>? toolCalls)
+    {
+        if (toolCalls is null)
+            return;
+
+        for (int i = 0; i < toolCalls.Count; i++)
+        {
+            LlamaCppToolCall toolCall = toolCalls[i];
+            int index = toolCall.Index ?? i;
+            if (!builders.TryGetValue(index, out StreamingToolCallBuilder? builder))
+            {
+                builder = new StreamingToolCallBuilder();
+                builders[index] = builder;
+            }
+
+            if (!string.IsNullOrWhiteSpace(toolCall.Id))
+                builder.Id = toolCall.Id;
+
+            if (!string.IsNullOrWhiteSpace(toolCall.Function?.Name))
+                builder.Name = toolCall.Function.Name;
+
+            if (toolCall.Function?.Arguments is not null)
+                builder.Arguments.Append(toolCall.Function.Arguments);
+        }
+    }
+
+    private static List<OllamaToolCall>? BuildOllamaToolCalls(Dictionary<int, StreamingToolCallBuilder> builders)
+    {
+        if (builders.Count == 0)
+            return null;
+
+        return [.. builders
+            .OrderBy(pair => pair.Key)
+            .Select(pair =>
+            {
+                string arguments = pair.Value.Arguments.ToString();
+                object? parsedArguments = null;
+                if (!string.IsNullOrWhiteSpace(arguments))
+                {
+                    try { parsedArguments = JsonSerializer.Deserialize<object>(arguments, _jsonOptions); }
+                    catch { parsedArguments = arguments; }
+                }
+
+                return new OllamaToolCall
+                {
+                    Function = new OllamaToolCallFunction
+                    {
+                        Name = pair.Value.Name,
+                        Arguments = parsedArguments,
+                    },
+                };
+            })];
+    }
+
+    private sealed class StreamingToolCallBuilder
+    {
+        public string Id { get; set; } = string.Empty;
+
+        public string Name { get; set; } = string.Empty;
+
+        public StringBuilder Arguments { get; } = new();
     }
 
     private static object ResolveEmbeddingInput(OllamaEmbeddingsRequest req)
