@@ -636,6 +636,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
         using StreamReader reader = new(source, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
         byte[] heartbeatBytes = Encoding.UTF8.GetBytes(": kaeo-heartbeat\n\n");
         TimeSpan heartbeatInterval = TimeSpan.FromSeconds(Math.Clamp(heartbeatIntervalSeconds, 5, 300));
+        OpenAiSseRewriter rewriter = new();
 
         while (!ct.IsCancellationRequested)
         {
@@ -657,62 +658,231 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             if (line is null)
                 break;
 
-            string outgoingLine = MirrorReasoningContentToContent(line);
-            byte[] lineBytes = Encoding.UTF8.GetBytes(outgoingLine + "\n");
-            await destination.WriteAsync(lineBytes, ct);
+            foreach (string outgoingLine in rewriter.Process(line))
+            {
+                byte[] lineBytes = Encoding.UTF8.GetBytes(outgoingLine + "\n");
+                await destination.WriteAsync(lineBytes, ct);
+            }
             await destination.FlushAsync(ct);
         }
     }
 
-    private static string MirrorReasoningContentToContent(string line)
+    /// <summary>
+    /// Rewrites an OpenAI-compatible SSE chat-completion stream on the fly:
+    ///   • mirrors <c>reasoning_content</c> into <c>content</c> when <c>content</c> is empty,
+    ///   • detects inline XML tool-call blocks (<c>&lt;tool_call&gt;&lt;function=NAME&gt;&lt;parameter=K&gt;V&lt;/parameter&gt;…&lt;/function&gt;&lt;/tool_call&gt;</c>)
+    ///     emitted by some llama.cpp templates and converts them into proper OpenAI streaming
+    ///     <c>tool_calls</c> deltas so that downstream OpenAI SDK clients (e.g. VS Copilot agent mode)
+    ///     execute the tool instead of receiving raw XML text,
+    ///   • forces <c>finish_reason</c> to <c>"tool_calls"</c> on the terminal chunk when tool calls were emitted.
+    /// </summary>
+    private sealed class OpenAiSseRewriter
     {
-        const string dataPrefix = "data:";
+        // Per-choice buffer of streamed delta.content prior to/within a tool_call block.
+        private readonly Dictionary<int, ChoiceState> _state = [];
 
-        if (!line.StartsWith(dataPrefix, StringComparison.Ordinal))
-            return line;
-
-        string data = line[dataPrefix.Length..];
-        if (data.StartsWith(' '))
-            data = data[1..];
-
-        if (data.Length == 0 || data == "[DONE]")
-            return line;
-
-        try
+        public IEnumerable<string> Process(string rawLine)
         {
-            JsonNode? node = JsonNode.Parse(data);
-            if (node is not JsonObject root
-                || root["choices"] is not JsonArray choices)
+            const string dataPrefix = "data:";
+
+            if (!rawLine.StartsWith(dataPrefix, StringComparison.Ordinal))
             {
-                return line;
+                yield return rawLine;
+                yield break;
             }
 
-            bool changed = false;
+            string data = rawLine[dataPrefix.Length..];
+            if (data.StartsWith(' ')) data = data[1..];
+
+            if (data.Length == 0 || data == "[DONE]")
+            {
+                yield return rawLine;
+                yield break;
+            }
+
+            JsonObject? root;
+            try { root = JsonNode.Parse(data) as JsonObject; }
+            catch (JsonException) { root = null; }
+
+            if (root is null || root["choices"] is not JsonArray choices)
+            {
+                yield return rawLine;
+                yield break;
+            }
+
+            // Collect extra synthesised frames (tool_call deltas) to emit AFTER the rewritten one.
+            List<JsonObject> extraFrames = [];
+
             foreach (JsonNode? choiceNode in choices)
             {
-                if (choiceNode is not JsonObject choice
-                    || choice["delta"] is not JsonObject delta
-                    || delta["reasoning_content"] is not JsonValue reasoningValue)
+                if (choiceNode is not JsonObject choice) continue;
+
+                int index = choice["index"]?.GetValue<int>() ?? 0;
+                if (!_state.TryGetValue(index, out ChoiceState? cs))
                 {
-                    continue;
+                    cs = new ChoiceState();
+                    _state[index] = cs;
                 }
 
-                if (!reasoningValue.TryGetValue(out string? reasoningContent)
-                    || string.IsNullOrEmpty(reasoningContent)
-                    || delta.TryGetPropertyValue("content", out JsonNode? contentNode) && contentNode is not null)
+                // Mirror reasoning_content → content (when content is empty/null).
+                JsonObject? delta = choice["delta"] as JsonObject;
+                if (delta is not null
+                    && delta["reasoning_content"] is JsonValue rv
+                    && rv.TryGetValue(out string? rcStr)
+                    && !string.IsNullOrEmpty(rcStr)
+                    && (delta["content"] is not JsonValue cv
+                        || !cv.TryGetValue(out string? cStr)
+                        || string.IsNullOrEmpty(cStr)))
                 {
-                    continue;
+                    delta["content"] = rcStr;
                 }
 
-                delta["content"] = reasoningContent;
-                changed = true;
+                // Strip / capture XML tool_call from delta.content.
+                if (delta?["content"] is JsonValue contentVal
+                    && contentVal.TryGetValue(out string? token)
+                    && !string.IsNullOrEmpty(token))
+                {
+                    string visible = cs.IngestToken(token, root, choice, index, extraFrames);
+                    if (string.IsNullOrEmpty(visible))
+                        delta.Remove("content");
+                    else
+                        delta["content"] = visible;
+                }
+
+                // If the model finished and we emitted tool calls, override finish_reason.
+                if (choice["finish_reason"] is JsonValue fr
+                    && fr.TryGetValue(out string? frStr)
+                    && !string.IsNullOrEmpty(frStr)
+                    && cs.EmittedToolCallCount > 0)
+                {
+                    choice["finish_reason"] = "tool_calls";
+                }
             }
 
-            return changed ? $"data: {root.ToJsonString(_jsonOptions)}" : line;
+            yield return $"data: {root.ToJsonString(_jsonOptions)}";
+
+            foreach (JsonObject extra in extraFrames)
+                yield return $"data: {extra.ToJsonString(_jsonOptions)}";
         }
-        catch (JsonException)
+
+        private sealed class ChoiceState
         {
-            return line;
+            private readonly StringBuilder _toolBuffer = new();
+            private bool _inToolCall;
+            public int EmittedToolCallCount { get; private set; }
+
+            /// <summary>
+            /// Consumes the next content token, returns the substring that should remain
+            /// visible to the client (anything outside of a <c>&lt;tool_call&gt;</c> block),
+            /// and appends synthesised <c>tool_calls</c> delta frames to <paramref name="extraFrames"/>
+            /// once a complete block has been seen.
+            /// </summary>
+            public string IngestToken(string token, JsonObject root, JsonObject choice, int choiceIndex, List<JsonObject> extraFrames)
+            {
+                StringBuilder visible = new();
+                int cursor = 0;
+
+                while (cursor < token.Length)
+                {
+                    if (_inToolCall)
+                    {
+                        int end = token.IndexOf("</tool_call>", cursor, StringComparison.OrdinalIgnoreCase);
+                        if (end < 0)
+                        {
+                            _toolBuffer.Append(token, cursor, token.Length - cursor);
+                            cursor = token.Length;
+                        }
+                        else
+                        {
+                            int closeEnd = end + "</tool_call>".Length;
+                            _toolBuffer.Append(token, cursor, closeEnd - cursor);
+                            cursor = closeEnd;
+                            _inToolCall = false;
+
+                            EmitToolCallFromBuffer(root, choice, choiceIndex, extraFrames);
+                            _toolBuffer.Clear();
+                        }
+                    }
+                    else
+                    {
+                        int start = token.IndexOf("<tool_call>", cursor, StringComparison.OrdinalIgnoreCase);
+                        if (start < 0)
+                        {
+                            visible.Append(token, cursor, token.Length - cursor);
+                            cursor = token.Length;
+                        }
+                        else
+                        {
+                            visible.Append(token, cursor, start - cursor);
+                            cursor = start;
+                            _inToolCall = true;
+                        }
+                    }
+                }
+
+                return visible.ToString();
+            }
+
+            private void EmitToolCallFromBuffer(JsonObject root, JsonObject choice, int choiceIndex, List<JsonObject> extraFrames)
+            {
+                string xml = _toolBuffer.ToString();
+                Match m = Regex.Match(
+                    xml,
+                    @"<tool_call>\s*<function=(?<name>[^>\s]+)>\s*(?<body>.*?)\s*</function>\s*</tool_call>",
+                    RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                if (!m.Success) return;
+
+                string name = m.Groups["name"].Value.Trim();
+                Dictionary<string, object?> args = new(StringComparer.OrdinalIgnoreCase);
+                foreach (Match pm in Regex.Matches(
+                    m.Groups["body"].Value,
+                    @"<parameter=(?<n>[^>\s]+)>\s*(?<v>.*?)\s*</parameter>",
+                    RegexOptions.IgnoreCase | RegexOptions.Singleline))
+                {
+                    args[pm.Groups["n"].Value.Trim()] = ParseXmlToolParameterValue(pm.Groups["v"].Value.Trim());
+                }
+
+                string argsJson = JsonSerializer.Serialize(args, _jsonOptions);
+                string callId = "call_" + Guid.NewGuid().ToString("N")[..16];
+                int toolIndex = EmittedToolCallCount++;
+
+                // Build a synthesised SSE frame mirroring the original chunk envelope.
+                JsonObject toolDelta = new()
+                {
+                    ["tool_calls"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["index"] = toolIndex,
+                            ["id"] = callId,
+                            ["type"] = "function",
+                            ["function"] = new JsonObject
+                            {
+                                ["name"] = name,
+                                ["arguments"] = argsJson,
+                            },
+                        },
+                    },
+                };
+
+                JsonObject newChoice = new()
+                {
+                    ["index"] = choiceIndex,
+                    ["delta"] = toolDelta,
+                    ["finish_reason"] = null,
+                };
+
+                JsonObject frame = new()
+                {
+                    ["id"] = root["id"]?.DeepClone(),
+                    ["object"] = root["object"]?.DeepClone(),
+                    ["created"] = root["created"]?.DeepClone(),
+                    ["model"] = root["model"]?.DeepClone(),
+                    ["choices"] = new JsonArray(newChoice),
+                };
+
+                extraFrames.Add(frame);
+            }
         }
     }
 
