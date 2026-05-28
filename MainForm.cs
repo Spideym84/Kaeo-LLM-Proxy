@@ -1123,8 +1123,8 @@ internal partial class MainForm : Form
             _ = LoadTestModelsAsync();
     }
 
-    /// <summary>Populates the test console model combo from the upstream.</summary>
-    private readonly Dictionary<string, string> _testModelToUpstream = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Populates the test console model combo from configured proxy mappings.</summary>
+    private readonly Dictionary<string, ModelMapping> _testProxyNameToMapping = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _testSendCts;
 
     private async Task LoadTestModelsAsync()
@@ -1133,17 +1133,14 @@ internal partial class MainForm : Form
 
         try
         {
-            // Gather unique upstream URLs from all mappings
-            var upstreamUrls = _settings.ModelMappings
-                .Where(m => !string.IsNullOrWhiteSpace(m.UpstreamUrl))
-                .Select(m => m.UpstreamUrl)
-                .Distinct()
-                .ToList();
-
             _cmbTestModel.Items.Clear();
-            _testModelToUpstream.Clear();
+            _testProxyNameToMapping.Clear();
 
-            if (upstreamUrls.Count == 0)
+            List<ModelMapping> mappings = [.. _settings.ModelMappings
+                .Where(m => !string.IsNullOrWhiteSpace(m.ProxyName))
+                .OrderBy(m => m.ProxyName, StringComparer.OrdinalIgnoreCase)];
+
+            if (mappings.Count == 0)
             {
                 _cmbTestModel.Items.Add("(No model mappings configured)");
                 if (_cmbTestModel.Items.Count > 0)
@@ -1152,30 +1149,16 @@ internal partial class MainForm : Form
                 return;
             }
 
-            var allModels = new HashSet<string>();
-
-            foreach (string url in upstreamUrls)
+            foreach (ModelMapping mapping in mappings)
             {
-                List<string> models = await ModelMappingDialog.FetchUpstreamModelsAsync(url);
-                foreach (string model in models)
-                {
-                    if (allModels.Add(model))
-                        _testModelToUpstream[model] = url;
-                }
+                string proxyName = mapping.ProxyName.Trim();
+                _cmbTestModel.Items.Add(proxyName);
+                _testProxyNameToMapping[proxyName] = mapping;
             }
-
-            if (allModels.Count == 0)
-            {
-                _lblTestStatus.Text = "No models found. Check upstream URLs in Settings.";
-                return;
-            }
-
-            foreach (string m in allModels)
-                _cmbTestModel.Items.Add(m);
 
             _cmbTestModel.SelectedIndex = 0;
             ApplySelectedTestModelDefaults();
-            _lblTestStatus.Text = $"Loaded {allModels.Count} model(s) from {upstreamUrls.Count} upstream(s). Ready.";
+            _lblTestStatus.Text = $"Loaded {mappings.Count} configured proxy model(s). Ready.";
         }
         catch (Exception ex)
         {
@@ -1196,11 +1179,17 @@ internal partial class MainForm : Form
             return;
         }
 
-        string model = _cmbTestModel.SelectedItem?.ToString() ?? string.Empty;
+        string proxyName = _cmbTestModel.SelectedItem?.ToString() ?? string.Empty;
 
-        if (string.IsNullOrEmpty(model))
+        if (string.IsNullOrEmpty(proxyName))
         {
             _lblTestStatus.Text = "Select a model first.";
+            return;
+        }
+
+        if (!_testProxyNameToMapping.TryGetValue(proxyName, out ModelMapping? mapping))
+        {
+            _lblTestStatus.Text = "Selected proxy model is no longer configured. Reload the Test Console.";
             return;
         }
 
@@ -1213,20 +1202,13 @@ internal partial class MainForm : Form
         _testSendCts = new CancellationTokenSource();
         CancellationToken ct = _testSendCts.Token;
 
-        // Resolve mapping + upstream up-front so the log entry has full context.
-        string? upstreamUrl = _testModelToUpstream.TryGetValue(model, out string? discoveredUrl)
-            ? discoveredUrl
-            : null;
-
-        ModelMapping? mapping = ResolveTestConsoleMapping(model, upstreamUrl);
-
-        if (string.IsNullOrWhiteSpace(upstreamUrl))
-            upstreamUrl = mapping?.UpstreamUrl;
+        string? upstreamUrl = mapping.UpstreamUrl;
+        string upstreamModel = string.IsNullOrWhiteSpace(mapping.ModelName)
+            ? proxyName
+            : mapping.ModelName;
 
         // Inject configured instruction set (if any) as a leading system message.
-        InstructionSet? instructionSet = mapping is null
-            ? null
-            : _settings.FindInstructionSet(mapping.InstructionSetName);
+        InstructionSet? instructionSet = _settings.FindInstructionSet(mapping.InstructionSetName);
 
         var messages = new List<object>();
         if (instructionSet is not null && !string.IsNullOrWhiteSpace(instructionSet.Instructions))
@@ -1238,7 +1220,7 @@ internal partial class MainForm : Form
 
         var payload = new
         {
-            model,
+            model = upstreamModel,
             stream = true,
             temperature,
             repeat_penalty = repeatPenalty,
@@ -1251,7 +1233,7 @@ internal partial class MainForm : Form
             Method = "POST",
             OllamaPath = "(test console)",
             UpstreamPath = "/v1/chat/completions",
-            Model = model,
+            Model = proxyName,
             Streaming = true,
             Status = RequestStatus.Success,
             RequestBody = _settings.CollectRequestDetails ? requestBody : null,
@@ -1269,12 +1251,12 @@ internal partial class MainForm : Form
 
         try
         {
-            await foreach (TestConsoleToken token in StreamChatAsync(model, upstreamUrl, mapping, requestBody, streamDiagnostics, ct))
+            await foreach (TestConsoleToken token in StreamChatAsync(upstreamModel, upstreamUrl, mapping, requestBody, streamDiagnostics, ct))
             {
                 if (token.Text == TestConsoleHeartbeatMarker)
                 {
                     heartbeatCount++;
-                    _stats.IncrementHeartbeat(mapping?.ProxyName ?? model);
+                    _stats.IncrementHeartbeat(mapping.ProxyName);
                     continue;
                 }
 
@@ -1352,12 +1334,7 @@ internal partial class MainForm : Form
         if (string.IsNullOrWhiteSpace(model))
             return;
 
-        string? upstreamUrl = _testModelToUpstream.TryGetValue(model, out string? discoveredUrl)
-            ? discoveredUrl
-            : null;
-
-        ModelMapping? mapping = ResolveTestConsoleMapping(model, upstreamUrl);
-        if (mapping is null)
+        if (!_testProxyNameToMapping.TryGetValue(model, out ModelMapping? mapping))
             return;
 
         _nudTestTemp.Value = ClampDecimal(mapping.Temperature, _nudTestTemp.Minimum, _nudTestTemp.Maximum, _nudTestTemp.Value);
@@ -1366,24 +1343,6 @@ internal partial class MainForm : Form
             _nudTestRepeatPenalty.Minimum,
             _nudTestRepeatPenalty.Maximum,
             _nudTestRepeatPenalty.Value);
-    }
-
-    private ModelMapping? ResolveTestConsoleMapping(string model, string? upstreamUrl)
-    {
-        ModelMapping? mapping = _settings.ModelMappings.FirstOrDefault(m =>
-            string.Equals(m.ProxyName, model, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(m.ModelName, model, StringComparison.OrdinalIgnoreCase));
-
-        if (mapping is null && !string.IsNullOrWhiteSpace(upstreamUrl))
-        {
-            List<ModelMapping> sameUpstream = [.. _settings.ModelMappings.Where(m =>
-                string.Equals(m.UpstreamUrl, upstreamUrl, StringComparison.OrdinalIgnoreCase))];
-
-            mapping = sameUpstream.FirstOrDefault(m => string.IsNullOrWhiteSpace(m.ModelName))
-                      ?? sameUpstream.FirstOrDefault();
-        }
-
-        return mapping;
     }
 
     private static decimal ClampDecimal(double value, decimal min, decimal max, decimal fallback)
