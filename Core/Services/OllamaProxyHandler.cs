@@ -1492,9 +1492,13 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
 
                 List<OllamaToolCall>? toolCalls = MapToolCallsToOllama(delta?.ToolCalls);
 
+                // Mirror reasoning_content to content if content is empty
+                string? content = delta?.Content;
+                if (string.IsNullOrEmpty(content) && !string.IsNullOrEmpty(delta?.ReasoningContent))
+                    content = delta.ReasoningContent;
+
                 // Prepend a brief notice to the content so the calling AI sees it
                 // in its own context window.
-                string? content = delta?.Content;
                 if (retryCount > 0)
                 {
                     string notice = BuildContextSummarizedNotice(originalMessageCount, messages.Count);
@@ -1502,7 +1506,7 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
                 }
 
                 if (_settings.CollectResponseDetails)
-                    log.ResponseBody = RedactResponseBodyForLog(delta?.Content ?? string.Empty, ollamaReq.Model);
+                    log.ResponseBody = RedactResponseBodyForLog(content ?? string.Empty, ollamaReq.Model);
 
                 var ollamaResp = new OllamaChatResponse
                 {
