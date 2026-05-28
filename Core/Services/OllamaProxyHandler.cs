@@ -658,9 +658,19 @@ internal sealed class OllamaProxyHandler(AppSettings settings, StatisticsService
             if (line is null)
                 break;
 
+            // Upstream framing uses "data: {...}\n\n". ReadLineAsync strips the line
+            // terminator and surfaces the blank terminator line as an empty string.
+            // Because a single inbound "data:" line may expand into multiple outbound
+            // "data:" frames (original + synthesised tool_call deltas), we must emit
+            // each outbound line as its OWN complete SSE event ("\n\n") rather than
+            // relying on the upstream blank line — otherwise SSE parsers will join
+            // consecutive data: lines into one event payload and JSON parsing fails.
+            if (line.Length == 0)
+                continue;
+
             foreach (string outgoingLine in rewriter.Process(line))
             {
-                byte[] lineBytes = Encoding.UTF8.GetBytes(outgoingLine + "\n");
+                byte[] lineBytes = Encoding.UTF8.GetBytes(outgoingLine + "\n\n");
                 await destination.WriteAsync(lineBytes, ct);
             }
             await destination.FlushAsync(ct);
