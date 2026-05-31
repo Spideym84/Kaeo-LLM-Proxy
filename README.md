@@ -86,6 +86,18 @@ To allow connections from other machines on your network:
 - Windows 10 version 22000 (21H2) or later
 - [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)
 
+## GitHub Pages
+
+A project landing page lives in the [`docs/`](docs/) folder and is published at
+**<https://spideym84.github.io/Kaeo-LLM-Proxy/>**.
+
+To enable Pages for a fork or fresh clone:
+
+1. Go to **Settings → Pages** in your repository.
+2. Under **Build and deployment**, choose **Deploy from a branch**.
+3. Select your default branch and the **`/docs`** folder.
+4. Click **Save** and wait up to 10 minutes for the site to publish.
+
 ## License
 
 This project is **free for personal, educational, and research use**.  
