@@ -89,7 +89,7 @@ To allow connections from other machines on your network:
 ## GitHub Pages
 
 A project landing page lives in the [`docs/`](docs/) folder and is published at
-**<https://spideym84.github.io/Kaeo-LLM-Proxy/>**.
+**<https://kaeo84.github.io/Kaeo-LLM-Proxy/>**.
 
 To enable Pages for a fork or fresh clone:
 
